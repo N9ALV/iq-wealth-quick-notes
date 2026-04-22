@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Request, type Response } from "express";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
@@ -146,27 +146,59 @@ function listDirectories(dir: string): DirectoryListing {
 }
 
 export function createServer(port = 3000, projectDir?: string): void {
-  let currentProjectDir = path.resolve(projectDir || process.cwd());
+  const defaultProjectDir = path.resolve(projectDir || process.cwd());
   const app = express();
 
-  ensureDirectoryExists(currentProjectDir);
+  ensureDirectoryExists(defaultProjectDir);
 
   app.use(express.json({ limit: "50mb" }));
 
+  function requestedProjectPath(req: Request): string | null {
+    const queryPath =
+      typeof req.query.projectPath === "string" ? req.query.projectPath.trim() : "";
+    const bodyPath =
+      typeof req.body?.projectPath === "string" ? req.body.projectPath.trim() : "";
+    const nextPath = queryPath || bodyPath;
+    return nextPath.length > 0 ? nextPath : null;
+  }
+
+  function projectDirFromRequest(
+    req: Request,
+    res: Response,
+    options?: { mustExist?: boolean }
+  ): string | null {
+    const nextProjectPath = requestedProjectPath(req);
+    const resolvedProjectDir = path.resolve(nextProjectPath || defaultProjectDir);
+    const mustExist = options?.mustExist ?? true;
+
+    if (mustExist && !isExistingDirectory(resolvedProjectDir)) {
+      res.status(404).json({ error: "Project directory not found" });
+      return null;
+    }
+
+    return resolvedProjectDir;
+  }
+
   // --- API routes ---
 
-  app.get("/api/pages", (_req, res) => {
-    const ids = listMdFiles(currentProjectDir);
+  app.get("/api/pages", (req, res) => {
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
+    const ids = listMdFiles(projectDir);
     const pages = ids.map((id) => {
-      const content = fs.readFileSync(path.join(currentProjectDir, `${id}.md`), "utf-8");
+      const content = fs.readFileSync(path.join(projectDir, `${id}.md`), "utf-8");
       return { id, title: titleFromContent(content, id), content };
     });
     res.json(pages);
   });
 
   app.get("/api/pages/:id", (req, res) => {
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
     const id = req.params.id;
-    const filePath = path.join(currentProjectDir, `${id}.md`);
+    const filePath = path.join(projectDir, `${id}.md`);
     if (!fs.existsSync(filePath)) {
       res.status(404).json({ error: "Page not found" });
       return;
@@ -176,8 +208,11 @@ export function createServer(port = 3000, projectDir?: string): void {
   });
 
   app.put("/api/pages/:id", (req, res) => {
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
     const id = req.params.id;
-    const filePath = path.join(currentProjectDir, `${id}.md`);
+    const filePath = path.join(projectDir, `${id}.md`);
     if (!fs.existsSync(filePath)) {
       res.status(404).json({ error: "Page not found" });
       return;
@@ -188,31 +223,37 @@ export function createServer(port = 3000, projectDir?: string): void {
   });
 
   app.post("/api/pages", (req, res) => {
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
     const { title, content: bodyContent } = req.body as {
       title?: string;
       content?: string;
     };
-    const id = nextUntitledId(currentProjectDir);
+    const id = nextUntitledId(projectDir);
     const content = bodyContent || `# ${title || "Untitled"}\n`;
-    const filePath = path.join(currentProjectDir, `${id}.md`);
+    const filePath = path.join(projectDir, `${id}.md`);
     fs.writeFileSync(filePath, content);
 
     // Add to roughdraft.json
-    const project = readProjectFile(currentProjectDir);
+    const project = readProjectFile(projectDir);
     const existing = Object.values(project.pages);
     const maxX =
       existing.length > 0
         ? Math.max(...existing.map((p) => p.x + p.width))
         : 0;
     project.pages[id] = { x: maxX + 20, y: 0, width: 400, height: 500 };
-    writeProjectFile(currentProjectDir, project);
+    writeProjectFile(projectDir, project);
 
     res.status(201).json({ id, title: titleFromContent(content, id), content });
   });
 
   app.delete("/api/pages/:id", (req, res) => {
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
     const id = req.params.id;
-    const filePath = path.join(currentProjectDir, `${id}.md`);
+    const filePath = path.join(projectDir, `${id}.md`);
     if (!fs.existsSync(filePath)) {
       res.status(404).json({ error: "Page not found" });
       return;
@@ -220,22 +261,25 @@ export function createServer(port = 3000, projectDir?: string): void {
     fs.unlinkSync(filePath);
 
     // Remove from roughdraft.json
-    const project = readProjectFile(currentProjectDir);
+    const project = readProjectFile(projectDir);
     delete project.pages[id];
-    writeProjectFile(currentProjectDir, project);
+    writeProjectFile(projectDir, project);
 
     res.json({ ok: true });
   });
 
-  app.get("/api/project", (_req, res) => {
-    const project = readProjectFile(currentProjectDir);
+  app.get("/api/project", (req, res) => {
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
+    const project = readProjectFile(projectDir);
     res.json(project);
   });
 
   app.get("/api/status", (_req, res) => {
     res.json({
       backend: "local-files",
-      projectDir: currentProjectDir,
+      projectDir: defaultProjectDir,
       port,
     });
   });
@@ -244,7 +288,7 @@ export function createServer(port = 3000, projectDir?: string): void {
     const requestedPath =
       typeof req.query.path === "string" && req.query.path.trim().length > 0
         ? path.resolve(req.query.path)
-        : currentProjectDir;
+        : defaultProjectDir;
 
     if (!isExistingDirectory(requestedPath)) {
       res.status(404).json({ error: "Directory not found" });
@@ -267,13 +311,11 @@ export function createServer(port = 3000, projectDir?: string): void {
       return;
     }
 
-    currentProjectDir = absolutePath;
-    ensureDirectoryExists(currentProjectDir);
-    readProjectFile(currentProjectDir);
+    readProjectFile(absolutePath);
 
     res.json({
       backend: "local-files",
-      projectDir: currentProjectDir,
+      projectDir: absolutePath,
       port,
     });
   });
@@ -287,25 +329,35 @@ export function createServer(port = 3000, projectDir?: string): void {
 
     const absolutePath = path.resolve(requestedPath);
     ensureDirectoryExists(absolutePath);
-    currentProjectDir = absolutePath;
-    readProjectFile(currentProjectDir);
+    readProjectFile(absolutePath);
 
     res.status(201).json({
       backend: "local-files",
-      projectDir: currentProjectDir,
+      projectDir: absolutePath,
       port,
     });
   });
 
   app.put("/api/project", (req, res) => {
-    const project = req.body as ProjectData;
-    writeProjectFile(currentProjectDir, project);
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
+    const project = (req.body as { project?: ProjectData }).project;
+    if (!project) {
+      res.status(400).json({ error: "project is required" });
+      return;
+    }
+
+    writeProjectFile(projectDir, project);
     res.json(project);
   });
 
   app.get("/api/files", (req, res) => {
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
     const relativePath = typeof req.query.path === "string" ? req.query.path : "";
-    const absolutePath = ensureProjectPath(currentProjectDir, relativePath);
+    const absolutePath = ensureProjectPath(projectDir, relativePath);
 
     if (!absolutePath || !fs.existsSync(absolutePath)) {
       res.status(404).json({ error: "File not found" });
@@ -316,14 +368,17 @@ export function createServer(port = 3000, projectDir?: string): void {
   });
 
   app.post("/api/assets", (req, res) => {
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
     const payload = req.body as AssetPayload;
     if (!payload.filename || !payload.dataBase64) {
       res.status(400).json({ error: "filename and dataBase64 are required" });
       return;
     }
 
-    const relativePath = nextAssetPath(currentProjectDir, payload.filename);
-    const absolutePath = ensureProjectPath(currentProjectDir, relativePath);
+    const relativePath = nextAssetPath(projectDir, payload.filename);
+    const absolutePath = ensureProjectPath(projectDir, relativePath);
     if (!absolutePath) {
       res.status(400).json({ error: "Invalid asset path" });
       return;
@@ -335,7 +390,7 @@ export function createServer(port = 3000, projectDir?: string): void {
 
     res.status(201).json({
       markdownPath: `./${relativePath}`,
-      previewUrl: `/api/files?path=${encodeURIComponent(relativePath)}`,
+      previewUrl: `/api/files?projectPath=${encodeURIComponent(projectDir)}&path=${encodeURIComponent(relativePath)}`,
       mimeType: payload.mimeType || "application/octet-stream",
     });
   });
@@ -350,6 +405,6 @@ export function createServer(port = 3000, projectDir?: string): void {
 
   app.listen(port, () => {
     console.log(`\n  Roughdraft running at http://localhost:${port}`);
-    console.log(`  Project directory: ${currentProjectDir}\n`);
+    console.log(`  Default project directory: ${defaultProjectDir}\n`);
   });
 }

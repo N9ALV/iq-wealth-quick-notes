@@ -3,7 +3,50 @@ import type { StorageBackend, Page, ProjectLayout } from "./storage";
 import { detectBackend } from "./detect-backend";
 import { Canvas } from "./Canvas";
 import { PageCard } from "./PageCard";
-import { ProjectPicker } from "./ProjectPicker";
+import { PathSwitcher } from "./PathSwitcher";
+
+interface RequestedPathState {
+  rawPath: string | null;
+  projectPath: string | null;
+  pageId: string | null;
+}
+
+function normalizePathSeparators(value: string) {
+  return value.replace(/\\/g, "/");
+}
+
+function getRawPathFromLocation(): string | null {
+  const searchParams = new URLSearchParams(window.location.search);
+  const queryPath = searchParams.get("path")?.trim();
+  if (queryPath) return queryPath;
+
+  const normalizedPathname = normalizePathSeparators(window.location.pathname);
+  if (normalizedPathname !== "/" && !normalizedPathname.startsWith("/api")) {
+    const decodedPathname = decodeURIComponent(normalizedPathname);
+    return decodedPathname.startsWith("/") ? decodedPathname : `/${decodedPathname}`;
+  }
+
+  return null;
+}
+
+function getRequestedPathState(): RequestedPathState {
+  const rawPath = getRawPathFromLocation();
+  if (!rawPath) {
+    return { rawPath: null, projectPath: null, pageId: null };
+  }
+
+  const normalizedPath = normalizePathSeparators(rawPath);
+  if (!normalizedPath.toLowerCase().endsWith(".md")) {
+    return { rawPath, projectPath: rawPath, pageId: null };
+  }
+
+  const lastSlashIndex = Math.max(normalizedPath.lastIndexOf("/"), normalizedPath.lastIndexOf("\\"));
+  const projectPath = lastSlashIndex >= 0 ? rawPath.slice(0, lastSlashIndex) || "/" : ".";
+  const filename = rawPath.slice(lastSlashIndex + 1);
+  const pageId = filename.replace(/\.md$/i, "");
+
+  return { rawPath, projectPath, pageId };
+}
 
 function getWorkspacePath(path?: string) {
   return path?.trim() || null;
@@ -17,30 +60,52 @@ function getWorkspaceName(path?: string) {
   return segments.at(-1) || workspacePath;
 }
 
-function getWorkspaceMeta(backend: StorageBackend | null) {
-  if (!backend) return { text: "", title: undefined as string | undefined };
+function buildLocationForPath(path?: string | null) {
+  const nextPath = path?.trim() || null;
+  const url = new URL(window.location.href);
 
-  const workspacePath = getWorkspacePath(backend.info.projectPath);
-  if (workspacePath) {
-    return {
-      text: `Local folder · ${workspacePath}`,
-      title: workspacePath,
-    };
+  if (nextPath) {
+    if (!nextPath.includes("\\")) {
+      url.pathname = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
+      url.searchParams.delete("path");
+    } else {
+      url.pathname = "/";
+      url.searchParams.set("path", nextPath);
+    }
+  } else {
+    url.searchParams.delete("path");
+    url.pathname = "/";
   }
 
-  return {
-    text: backend.info.detail,
-    title: backend.info.detail,
-  };
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function syncProjectPathInUrl(projectPath?: string) {
+  const nextLocation = buildLocationForPath(getWorkspacePath(projectPath));
+  const currentLocation = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextLocation !== currentLocation) {
+    window.history.replaceState(null, "", nextLocation);
+  }
+}
+
+function syncRequestedPathInUrl(path?: string | null) {
+  const nextLocation = buildLocationForPath(path);
+  const currentLocation = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextLocation !== currentLocation) {
+    window.history.replaceState(null, "", nextLocation);
+  }
 }
 
 export function App() {
   const [backend, setBackend] = useState<StorageBackend | null>(null);
+  const [allPages, setAllPages] = useState<Page[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [layout, setLayout] = useState<ProjectLayout>({ pages: {} });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isProjectPickerOpen, setIsProjectPickerOpen] = useState(false);
+  const [requestedPathState, setRequestedPathState] = useState<RequestedPathState>(
+    getRequestedPathState()
+  );
   const backendRef = useRef<StorageBackend | null>(null);
   const layoutRef = useRef<ProjectLayout>({ pages: {} });
   const saveLayoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,7 +113,10 @@ export function App() {
   backendRef.current = backend;
   layoutRef.current = layout;
 
-  const loadProject = useCallback(async (nextBackend: StorageBackend) => {
+  const loadProject = useCallback(async (
+    nextBackend: StorageBackend,
+    focusedPageId?: string | null
+  ) => {
     if (saveLayoutTimer.current) {
       clearTimeout(saveLayoutTimer.current);
       saveLayoutTimer.current = null;
@@ -71,6 +139,12 @@ export function App() {
       proj = await nextBackend.getProject();
     } else {
       pg = pageList;
+    }
+
+    setAllPages(pg);
+
+    if (focusedPageId) {
+      pg = pg.filter((page) => page.id === focusedPageId);
     }
 
     let layoutChanged = false;
@@ -101,9 +175,28 @@ export function App() {
     const initialize = async () => {
       const detectedBackend = await detectBackend();
       if (cancelled) return;
-      setBackend(detectedBackend);
 
-      await loadProject(detectedBackend);
+      if (detectedBackend.canManageProjects) {
+        const requestedProjectPath = requestedPathState.projectPath;
+        if (
+          requestedProjectPath &&
+          requestedProjectPath !== getWorkspacePath(detectedBackend.info.projectPath)
+        ) {
+          try {
+            await detectedBackend.openProject(requestedProjectPath);
+          } catch (error) {
+            console.error("Failed to open project from URL:", error);
+          }
+        }
+      }
+
+      if (requestedPathState.rawPath) {
+        syncRequestedPathInUrl(requestedPathState.rawPath);
+      } else {
+        syncProjectPathInUrl(detectedBackend.info.projectPath);
+      }
+      setBackend(detectedBackend);
+      await loadProject(detectedBackend, requestedPathState.pageId);
       if (cancelled) return;
       setLoading(false);
     };
@@ -118,14 +211,14 @@ export function App() {
   const handleSavePage = useCallback(async (id: string, content: string) => {
     await backendRef.current?.savePage(id, content);
     // Update page title in local state
-    setPages((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
-        const firstLine = content.split("\n")[0] || "";
-        const title = firstLine.replace(/^#*\s*/, "") || p.id;
-        return { ...p, content, title };
-      })
-    );
+    const updatePage = (page: Page) => {
+      if (page.id !== id) return page;
+      const firstLine = content.split("\n")[0] || "";
+      const title = firstLine.replace(/^#*\s*/, "") || page.id;
+      return { ...page, content, title };
+    };
+    setPages((prev) => prev.map(updatePage));
+    setAllPages((prev) => prev.map(updatePage));
   }, []);
 
   const handleReposition = useCallback((id: string, x: number, y: number) => {
@@ -150,6 +243,7 @@ export function App() {
     if (!backendRef.current) return;
     const page = await backendRef.current.createPage("Untitled", "# Untitled\n");
     const proj = await backendRef.current.getProject();
+    setAllPages((prev) => [...prev, page]);
     setPages((prev) => [...prev, page]);
     setLayout(proj);
     setSelectedId(page.id);
@@ -159,6 +253,7 @@ export function App() {
     async (id: string) => {
       if (!backendRef.current) return;
       await backendRef.current.deletePage(id);
+      setAllPages((prev) => prev.filter((p) => p.id !== id));
       setPages((prev) => prev.filter((p) => p.id !== id));
       setLayout((prev) => {
         const next = { ...prev, pages: { ...prev.pages } };
@@ -173,14 +268,6 @@ export function App() {
   const handleCanvasPointerDown = useCallback(() => {
     setSelectedId(null);
   }, []);
-
-  const handleProjectChanged = useCallback(async () => {
-    setLoading(true);
-    const nextBackend = await detectBackend();
-    setBackend(nextBackend);
-    await loadProject(nextBackend);
-    setLoading(false);
-  }, [loadProject]);
 
   if (loading) {
     return (
@@ -197,29 +284,23 @@ export function App() {
     );
   }
 
-  const workspaceName = getWorkspaceName(backend?.info.projectPath);
-  const workspaceMeta = getWorkspaceMeta(backend);
+  const displayPath = requestedPathState.rawPath ?? backend?.info.projectPath;
+  const workspaceName = getWorkspaceName(displayPath);
+  const isSinglePageMode = Boolean(requestedPathState.pageId);
 
   return (
     <>
       <div className="app-chrome">
-        <div className="workspace-header">
-          <div className="workspace-copy">
-            <h1 className="workspace-title">{workspaceName}</h1>
-            <p className="workspace-meta" title={workspaceMeta.title}>
-              {workspaceMeta.text}
-            </p>
-          </div>
-          {backend?.canManageProjects ? (
-            <button
-              className="workspace-action"
-              type="button"
-              onClick={() => setIsProjectPickerOpen(true)}
-            >
-              Switch project
-            </button>
-          ) : null}
-        </div>
+        {backend ? (
+          <PathSwitcher
+            backend={backend}
+            currentLabel={workspaceName}
+            currentPath={displayPath ?? null}
+            projectPath={backend.info.projectPath ?? null}
+            pages={allPages}
+            buildLocationForPath={buildLocationForPath}
+          />
+        ) : null}
       </div>
       <Canvas onPointerDownOnCanvas={handleCanvasPointerDown}>
         {pages.map((page) => {
@@ -231,6 +312,7 @@ export function App() {
               x={pos.x}
               y={pos.y}
               selected={selectedId === page.id}
+              canDelete={!isSinglePageMode}
               onSelect={setSelectedId}
               onSave={handleSavePage}
               onReposition={handleReposition}
@@ -240,16 +322,10 @@ export function App() {
           );
         })}
       </Canvas>
-      <button className="create-page-btn" onClick={handleCreatePage} title="New page">
-        +
-      </button>
-      {backend ? (
-        <ProjectPicker
-          backend={backend}
-          open={isProjectPickerOpen}
-          onClose={() => setIsProjectPickerOpen(false)}
-          onProjectChanged={handleProjectChanged}
-        />
+      {!isSinglePageMode ? (
+        <button className="create-page-btn" onClick={handleCreatePage} title="New page">
+          +
+        </button>
       ) : null}
     </>
   );

@@ -14,6 +14,7 @@ interface PageCardProps {
   x: number;
   y: number;
   selected: boolean;
+  canDelete?: boolean;
   onSelect: (id: string) => void;
   onSave: (id: string, content: string) => Promise<void>;
   onReposition: (id: string, x: number, y: number) => void;
@@ -26,6 +27,7 @@ export function PageCard({
   x,
   y,
   selected,
+  canDelete = true,
   onSelect,
   onSave,
   onReposition,
@@ -208,17 +210,19 @@ export function PageCard({
         {saveState === "error" ? (
           <span className="page-card-status page-card-status-error">Save failed</span>
         ) : null}
-        <button
-          className="page-card-delete"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete(page.id);
-          }}
-          title="Delete page"
-        >
-          &times;
-        </button>
+        {canDelete ? (
+          <button
+            className="page-card-delete"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete(page.id);
+            }}
+            title="Delete page"
+          >
+            &times;
+          </button>
+        ) : null}
       </div>
       <div className="page-card-body" onPointerDown={handleBodyPointerDown}>
         <EditorToolbar editor={editor} onPickFiles={insertFiles} />

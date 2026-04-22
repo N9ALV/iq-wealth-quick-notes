@@ -15,55 +15,78 @@ export class ApiBackend implements StorageBackend {
     this.info = info;
   }
 
+  private updateProjectInfo(projectPath?: string): void {
+    this.info = {
+      ...this.info,
+      detail: projectPath || "Project folder on disk",
+      projectPath,
+    };
+  }
+
+  private buildUrl(route: string, params?: Record<string, string>): string {
+    const url = new URL(route, window.location.origin);
+    const projectPath = this.info.projectPath?.trim();
+
+    if (projectPath) {
+      url.searchParams.set("projectPath", projectPath);
+    }
+
+    Object.entries(params ?? {}).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+
+    return `${url.pathname}${url.search}`;
+  }
+
   async listPages(): Promise<Page[]> {
-    const res = await fetch("/api/pages");
+    const res = await fetch(this.buildUrl("/api/pages"));
     if (!res.ok) throw new Error(`Failed to list pages: ${res.status}`);
     return res.json();
   }
 
   async getPage(id: string): Promise<Page> {
-    const res = await fetch(`/api/pages/${encodeURIComponent(id)}`);
+    const res = await fetch(this.buildUrl(`/api/pages/${encodeURIComponent(id)}`));
     if (!res.ok) throw new Error(`Failed to get page ${id}: ${res.status}`);
     return res.json();
   }
 
   async savePage(id: string, content: string): Promise<void> {
-    const res = await fetch(`/api/pages/${encodeURIComponent(id)}`, {
+    const res = await fetch(this.buildUrl(`/api/pages/${encodeURIComponent(id)}`), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, projectPath: this.info.projectPath }),
     });
     if (!res.ok) throw new Error(`Failed to save page ${id}: ${res.status}`);
   }
 
   async createPage(title?: string, content?: string): Promise<Page> {
-    const res = await fetch("/api/pages", {
+    const res = await fetch(this.buildUrl("/api/pages"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, content }),
+      body: JSON.stringify({ title, content, projectPath: this.info.projectPath }),
     });
     if (!res.ok) throw new Error(`Failed to create page: ${res.status}`);
     return res.json();
   }
 
   async deletePage(id: string): Promise<void> {
-    const res = await fetch(`/api/pages/${encodeURIComponent(id)}`, {
+    const res = await fetch(this.buildUrl(`/api/pages/${encodeURIComponent(id)}`), {
       method: "DELETE",
     });
     if (!res.ok) throw new Error(`Failed to delete page ${id}: ${res.status}`);
   }
 
   async getProject(): Promise<ProjectLayout> {
-    const res = await fetch("/api/project");
+    const res = await fetch(this.buildUrl("/api/project"));
     if (!res.ok) throw new Error(`Failed to get project: ${res.status}`);
     return res.json();
   }
 
   async saveProject(project: ProjectLayout): Promise<void> {
-    const res = await fetch("/api/project", {
+    const res = await fetch(this.buildUrl("/api/project"), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(project),
+      body: JSON.stringify({ project, projectPath: this.info.projectPath }),
     });
     if (!res.ok) throw new Error(`Failed to save project: ${res.status}`);
   }
@@ -76,13 +99,14 @@ export class ApiBackend implements StorageBackend {
       binary += String.fromCharCode(bytes[index]!);
     }
 
-    const res = await fetch("/api/assets", {
+    const res = await fetch(this.buildUrl("/api/assets"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         filename: file.name,
         mimeType: file.type || "application/octet-stream",
         dataBase64: btoa(binary),
+        projectPath: this.info.projectPath,
       }),
     });
 
@@ -92,7 +116,7 @@ export class ApiBackend implements StorageBackend {
 
   resolveFileUrl(path: string): string | null {
     const normalized = path.replace(/^\.?\//, "");
-    return `/api/files?path=${encodeURIComponent(normalized)}`;
+    return this.buildUrl("/api/files", { path: normalized });
   }
 
   async listDirectories(path?: string): Promise<DirectoryListing> {
@@ -109,6 +133,8 @@ export class ApiBackend implements StorageBackend {
       body: JSON.stringify({ path }),
     });
     if (!res.ok) throw new Error(`Failed to open project: ${res.status}`);
+    const payload = (await res.json()) as { projectDir?: string };
+    this.updateProjectInfo(payload.projectDir);
   }
 
   async createProject(path: string): Promise<void> {
@@ -118,5 +144,7 @@ export class ApiBackend implements StorageBackend {
       body: JSON.stringify({ path }),
     });
     if (!res.ok) throw new Error(`Failed to create project: ${res.status}`);
+    const payload = (await res.json()) as { projectDir?: string };
+    this.updateProjectInfo(payload.projectDir);
   }
 }

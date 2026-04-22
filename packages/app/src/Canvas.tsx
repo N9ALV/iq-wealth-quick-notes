@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -32,6 +33,7 @@ const WHEEL_ZOOM_END_DELAY_MS = 48;
 const ZOOM_INERTIA_DECAY = 0.012;
 const MIN_ZOOM_INERTIA_VELOCITY = 0.00004;
 const MAX_ZOOM_INERTIA_VELOCITY = 0.01;
+const RULER_TARGET_MAJOR_SPACING = 120;
 
 const CanvasScaleContext = createContext(1);
 
@@ -43,10 +45,60 @@ function clampZoom(zoom: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 }
 
+function getNiceStep(minStep: number) {
+  if (!Number.isFinite(minStep) || minStep <= 0) return 100;
+
+  const magnitude = 10 ** Math.floor(Math.log10(minStep));
+  const normalized = minStep / magnitude;
+
+  if (normalized <= 1) return magnitude;
+  if (normalized <= 2) return 2 * magnitude;
+  if (normalized <= 5) return 5 * magnitude;
+  return 10 * magnitude;
+}
+
+function getRulerTicks(length: number, offset: number, zoom: number) {
+  if (length <= 0 || zoom <= 0) return [];
+
+  const majorStep = getNiceStep(RULER_TARGET_MAJOR_SPACING / zoom);
+  const majorScreenSpacing = majorStep * zoom;
+  const minorDivisions =
+    majorScreenSpacing >= 240 ? 10 : majorScreenSpacing >= 120 ? 5 : 2;
+  const minorStep = majorStep / minorDivisions;
+  const worldStart = (-offset) / zoom;
+  const worldEnd = (length - offset) / zoom;
+  const startIndex = Math.floor(worldStart / minorStep) - 1;
+  const endIndex = Math.ceil(worldEnd / minorStep) + 1;
+  const ticks: Array<{ screen: number; value: number; isMajor: boolean }> = [];
+
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    const value = index * minorStep;
+    const screen = offset + value * zoom;
+
+    if (screen < -1 || screen > length + 1) continue;
+
+    const majorIndex = value / majorStep;
+    const isMajor = Math.abs(majorIndex - Math.round(majorIndex)) < 0.000001;
+
+    ticks.push({
+      screen,
+      value: Math.round(value),
+      isMajor,
+    });
+  }
+
+  return ticks;
+}
+
+function formatRulerValue(value: number) {
+  return Math.round(value).toLocaleString("en-US");
+}
+
 export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
   const cameraRef = useRef<Camera>({ x: 0, y: 0, z: 1 });
   const [camera, setCameraState] = useState<Camera>(cameraRef.current);
   const [isPanning, setIsPanning] = useState(false);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const lastPointer = useRef({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const isPinchingRef = useRef(false);
@@ -252,6 +304,27 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
       finishZoomGesture(0.9);
     }, WHEEL_ZOOM_END_DELAY_MS);
   }, [clearWheelZoomEndTimer, finishZoomGesture]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    const updateViewport = () => {
+      setViewport({
+        width: element.clientWidth,
+        height: element.clientHeight,
+      });
+    };
+
+    updateViewport();
+
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -587,6 +660,16 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
     setIsPanning(false);
   }, []);
 
+  const horizontalTicks = useMemo(
+    () => getRulerTicks(viewport.width, camera.x, camera.z),
+    [camera.x, camera.z, viewport.width]
+  );
+
+  const verticalTicks = useMemo(
+    () => getRulerTicks(viewport.height, camera.y, camera.z),
+    [camera.y, camera.z, viewport.height]
+  );
+
   return (
     <CanvasScaleContext.Provider value={camera.z}>
       <div
@@ -597,6 +680,44 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       >
+        <div className="canvas-backdrop" aria-hidden="true" />
+        <div className="canvas-ruler canvas-ruler-top" aria-hidden="true">
+          {horizontalTicks.map((tick) => (
+            <div
+              key={`x-${tick.value}`}
+              className={`canvas-ruler-tick canvas-ruler-tick-top ${
+                tick.isMajor ? "is-major" : ""
+              }`}
+              style={{ left: `${tick.screen}px` }}
+            >
+              <span className="canvas-ruler-mark" />
+              {tick.isMajor ? (
+                <span className="canvas-ruler-label">
+                  {formatRulerValue(tick.value)}
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+        <div className="canvas-ruler canvas-ruler-left" aria-hidden="true">
+          {verticalTicks.map((tick) => (
+            <div
+              key={`y-${tick.value}`}
+              className={`canvas-ruler-tick canvas-ruler-tick-left ${
+                tick.isMajor ? "is-major" : ""
+              }`}
+              style={{ top: `${tick.screen}px` }}
+            >
+              <span className="canvas-ruler-mark" />
+              {tick.isMajor ? (
+                <span className="canvas-ruler-label">
+                  {formatRulerValue(tick.value)}
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+        <div className="canvas-ruler-corner" aria-hidden="true" />
         <div
           className="canvas-inner"
           style={{
