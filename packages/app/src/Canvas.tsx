@@ -12,6 +12,11 @@ import type { ReactNode } from "react";
 interface CanvasProps {
   children: ReactNode;
   onPointerDownOnCanvas?: () => void;
+  initialWorldCenter?: {
+    x: number;
+    y: number;
+  } | null;
+  initialWorldCenterKey?: string;
 }
 
 interface Camera {
@@ -34,6 +39,9 @@ const ZOOM_INERTIA_DECAY = 0.012;
 const MIN_ZOOM_INERTIA_VELOCITY = 0.00004;
 const MAX_ZOOM_INERTIA_VELOCITY = 0.01;
 const RULER_TARGET_MAJOR_SPACING = 120;
+const RULER_SIZE_PX = 28;
+const RULER_LABEL_PADDING_PX = 4;
+const RULER_LABEL_CHAR_WIDTH_PX = 5.5;
 
 const CanvasScaleContext = createContext(1);
 
@@ -57,14 +65,25 @@ function getNiceStep(minStep: number) {
   return 10 * magnitude;
 }
 
-function getRulerTicks(length: number, offset: number, zoom: number) {
-  if (length <= 0 || zoom <= 0) return [];
-
+function getRulerScale(zoom: number) {
   const majorStep = getNiceStep(RULER_TARGET_MAJOR_SPACING / zoom);
   const majorScreenSpacing = majorStep * zoom;
   const minorDivisions =
     majorScreenSpacing >= 240 ? 10 : majorScreenSpacing >= 120 ? 5 : 2;
   const minorStep = majorStep / minorDivisions;
+
+  return {
+    majorStep,
+    majorScreenSpacing,
+    minorStep,
+    minorScreenSpacing: minorStep * zoom,
+  };
+}
+
+function getRulerTicks(length: number, offset: number, zoom: number) {
+  if (length <= 0 || zoom <= 0) return [];
+
+  const { majorStep, minorStep } = getRulerScale(zoom);
   const worldStart = (-offset) / zoom;
   const worldEnd = (length - offset) / zoom;
   const startIndex = Math.floor(worldStart / minorStep) - 1;
@@ -94,13 +113,46 @@ function formatRulerValue(value: number) {
   return Math.round(value).toLocaleString("en-US");
 }
 
-export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
+function getGridOffset(offset: number, spacing: number) {
+  if (!Number.isFinite(spacing) || spacing <= 0) return 0;
+
+  return ((offset % spacing) + spacing) % spacing;
+}
+
+function getHorizontalRulerLabelStyle(
+  screen: number,
+  label: string,
+  viewportWidth: number
+) {
+  const estimatedWidth =
+    label.length * RULER_LABEL_CHAR_WIDTH_PX + RULER_LABEL_PADDING_PX * 2;
+  const left = Math.max(
+    RULER_LABEL_PADDING_PX,
+    Math.min(
+      screen + RULER_LABEL_PADDING_PX,
+      viewportWidth - estimatedWidth - RULER_LABEL_PADDING_PX
+    )
+  );
+
+  return {
+    left: `${left - screen}px`,
+    top: "0px",
+  };
+}
+
+export function Canvas({
+  children,
+  onPointerDownOnCanvas,
+  initialWorldCenter,
+  initialWorldCenterKey,
+}: CanvasProps) {
   const cameraRef = useRef<Camera>({ x: 0, y: 0, z: 1 });
   const [camera, setCameraState] = useState<Camera>(cameraRef.current);
   const [isPanning, setIsPanning] = useState(false);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const lastPointer = useRef({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastInitialWorldCenterKeyRef = useRef<string | null>(null);
   const isPinchingRef = useRef(false);
   const touchPinchRef = useRef({
     state: "not-sure" as PinchState,
@@ -325,6 +377,24 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
       observer.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    if (!initialWorldCenter) return;
+    if (viewport.width <= 0 || viewport.height <= 0) return;
+
+    const centerKey = initialWorldCenterKey ?? "__default__";
+    if (lastInitialWorldCenterKeyRef.current === centerKey) return;
+    lastInitialWorldCenterKeyRef.current = centerKey;
+
+    const visibleCenterX = RULER_SIZE_PX + (viewport.width - RULER_SIZE_PX) / 2;
+    const visibleCenterY = RULER_SIZE_PX + (viewport.height - RULER_SIZE_PX) / 2;
+
+    setCamera({
+      x: visibleCenterX - initialWorldCenter.x,
+      y: visibleCenterY - initialWorldCenter.y,
+      z: 1,
+    });
+  }, [initialWorldCenter, initialWorldCenterKey, setCamera, viewport.height, viewport.width]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -667,6 +737,18 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
     [camera.y, camera.z, viewport.height]
   );
 
+  const gridScale = useMemo(() => getRulerScale(camera.z), [camera.z]);
+  const gridStyle = useMemo(
+    () => ({
+      backgroundImage:
+        "linear-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px), linear-gradient(rgba(100, 116, 139, 0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(100, 116, 139, 0.18) 1px, transparent 1px)",
+      backgroundRepeat: "repeat",
+      backgroundSize: `100% ${gridScale.minorScreenSpacing}px, ${gridScale.minorScreenSpacing}px 100%, 100% ${gridScale.majorScreenSpacing}px, ${gridScale.majorScreenSpacing}px 100%`,
+      backgroundPosition: `0 ${getGridOffset(camera.y, gridScale.minorScreenSpacing)}px, ${getGridOffset(camera.x, gridScale.minorScreenSpacing)}px 0, 0 ${getGridOffset(camera.y, gridScale.majorScreenSpacing)}px, ${getGridOffset(camera.x, gridScale.majorScreenSpacing)}px 0`,
+    }),
+    [camera.x, camera.y, gridScale]
+  );
+
   return (
     <CanvasScaleContext.Provider value={camera.z}>
       <div
@@ -676,8 +758,7 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
           isPanning ? "cursor-grabbing" : "cursor-grab"
         }`}
         style={{
-          background:
-            "radial-gradient(circle at top left, rgba(63, 140, 255, 0.22), transparent 34%), radial-gradient(circle at bottom right, rgba(24, 87, 180, 0.18), transparent 28%), linear-gradient(180deg, #07101d 0%, #091523 48%, #08111b 100%)",
+          background: "#f8fafc",
         }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -685,40 +766,51 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
         onPointerCancel={handlePointerUp}
       >
         <div
-          className="pointer-events-none absolute inset-0 opacity-25"
+          className="pointer-events-none absolute inset-0"
           aria-hidden="true"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(194, 228, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(194, 228, 255, 0.05) 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }}
+          style={gridStyle}
         />
         <div
-          className="pointer-events-none absolute inset-x-0 top-0 z-20 h-9 overflow-hidden border-b border-sky-100/15 bg-slate-950/70 text-[10px] font-semibold tracking-[0.02em] text-sky-100/65 backdrop-blur-xl shadow-[inset_0_0_0_1px_rgba(158,202,255,0.08)]"
+          className="pointer-events-none absolute inset-x-0 top-0 z-20 overflow-hidden border-b border-slate-300/70 bg-white/88 text-[9px] font-semibold tracking-[0.02em] text-slate-500 backdrop-blur-xl shadow-[inset_0_0_0_1px_rgba(255,255,255,0.65)]"
           aria-hidden="true"
+          style={{ height: `${RULER_SIZE_PX}px` }}
         >
           {horizontalTicks.map((tick) => (
             <div
               key={`x-${tick.value}`}
-              className="absolute bottom-0 -translate-x-[0.5px]"
+              className="absolute bottom-0"
               style={{ left: `${tick.screen}px` }}
             >
               <span
                 className={`mt-auto block w-px ${
-                  tick.isMajor ? "h-3.5 bg-sky-50/75" : "h-2 bg-sky-100/30"
+                  tick.isMajor ? "h-3 bg-slate-400/80" : "h-1.5 bg-slate-300/70"
                 }`}
               />
-              {tick.isMajor ? (
-                <span className="absolute top-[5px] left-[6px] text-sky-50/80 [text-shadow:0_1px_0_rgba(4,10,17,0.9)]">
-                  {formatRulerValue(tick.value)}
-                </span>
-              ) : null}
+              {tick.isMajor
+                ? (() => {
+                    const label = formatRulerValue(tick.value);
+
+                    return (
+                      <span
+                        className="absolute leading-none text-slate-500"
+                        style={getHorizontalRulerLabelStyle(
+                          tick.screen,
+                          label,
+                          viewport.width
+                        )}
+                      >
+                        {label}
+                      </span>
+                    );
+                  })()
+                : null}
             </div>
           ))}
         </div>
         <div
-          className="pointer-events-none absolute inset-y-0 left-0 z-20 w-9 overflow-hidden border-r border-sky-100/15 bg-slate-950/70 text-[10px] font-semibold tracking-[0.02em] text-sky-100/65 backdrop-blur-xl shadow-[inset_0_0_0_1px_rgba(158,202,255,0.08)]"
+          className="pointer-events-none absolute inset-y-0 left-0 z-20 overflow-hidden border-r border-slate-300/70 bg-white/88 text-[9px] font-semibold tracking-[0.02em] text-slate-500 backdrop-blur-xl shadow-[inset_0_0_0_1px_rgba(255,255,255,0.65)]"
           aria-hidden="true"
+          style={{ width: `${RULER_SIZE_PX}px` }}
         >
           {verticalTicks.map((tick) => (
             <div
@@ -728,11 +820,11 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
             >
               <span
                 className={`ml-auto block ${
-                  tick.isMajor ? "h-px w-3.5 bg-sky-50/75" : "h-px w-2 bg-sky-100/30"
+                  tick.isMajor ? "h-px w-3 bg-slate-400/80" : "h-px w-1.5 bg-slate-300/70"
                 }`}
               />
               {tick.isMajor ? (
-                <span className="absolute top-[6px] right-[18px] origin-top-right -rotate-90 whitespace-nowrap text-sky-50/80 [text-shadow:0_1px_0_rgba(4,10,17,0.9)]">
+                <span className="absolute top-[4px] right-[14px] origin-top-right -rotate-90 whitespace-nowrap text-slate-500">
                   {formatRulerValue(tick.value)}
                 </span>
               ) : null}
@@ -740,11 +832,12 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
           ))}
         </div>
         <div
-          className="pointer-events-none absolute top-0 left-0 z-[21] size-9 border-r border-b border-sky-100/15 shadow-[inset_0_0_0_1px_rgba(158,202,255,0.08)]"
+          className="pointer-events-none absolute top-0 left-0 z-[21] border-r border-b border-slate-300/70 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.65)]"
           aria-hidden="true"
           style={{
-            background:
-              "linear-gradient(135deg, rgba(120, 179, 255, 0.14), transparent 70%), rgba(4, 10, 17, 0.82)",
+            background: "rgba(255, 255, 255, 0.88)",
+            width: `${RULER_SIZE_PX}px`,
+            height: `${RULER_SIZE_PX}px`,
           }}
         />
         <div
@@ -755,17 +848,6 @@ export function Canvas({ children, onPointerDownOnCanvas }: CanvasProps) {
             transformOrigin: "0 0",
           }}
         >
-          <div
-            className="pointer-events-none absolute -top-[24000px] -left-[24000px] h-[48000px] w-[48000px] opacity-95"
-            aria-hidden="true"
-            style={{
-              backgroundColor: "transparent",
-              backgroundImage:
-                "linear-gradient(rgba(167, 214, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(167, 214, 255, 0.1) 1px, transparent 1px), linear-gradient(rgba(223, 243, 255, 0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(223, 243, 255, 0.18) 1px, transparent 1px)",
-              backgroundRepeat: "repeat",
-              backgroundSize: "24px 24px, 24px 24px, 120px 120px, 120px 120px",
-            }}
-          />
           {children}
         </div>
       </div>

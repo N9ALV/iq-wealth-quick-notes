@@ -1,7 +1,7 @@
 {
   "scripts": {
     "setup": "./scripts/setup.sh",
-    "run": "./scripts/run.sh",
+    "run": "pnpm dev",
     "archive": ""
   },
   "runScriptMode": "concurrent"

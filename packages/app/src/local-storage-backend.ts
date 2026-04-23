@@ -3,6 +3,7 @@ import type {
   DirectoryListing,
   Page,
   ProjectLayout,
+  ProjectTreeListing,
   StorageBackend,
   StoredAsset,
 } from "./storage";
@@ -196,6 +197,10 @@ export class LocalStorageBackend implements StorageBackend {
   }
 
   async listDirectories(_path?: string): Promise<DirectoryListing> {
+    throw new Error("Project folders are unavailable in browser storage mode.");
+  }
+
+  async listProjectTree(): Promise<ProjectTreeListing> {
     throw new Error("Project folders are unavailable in browser storage mode.");
   }
 

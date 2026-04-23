@@ -3,6 +3,7 @@ import type {
   DirectoryListing,
   Page,
   ProjectLayout,
+  ProjectTreeListing,
   StorageBackend,
   StoredAsset,
 } from "./storage";
@@ -123,6 +124,12 @@ export class ApiBackend implements StorageBackend {
     const query = path ? `?path=${encodeURIComponent(path)}` : "";
     const res = await fetch(`/api/directories${query}`);
     if (!res.ok) throw new Error(`Failed to list directories: ${res.status}`);
+    return res.json();
+  }
+
+  async listProjectTree(): Promise<ProjectTreeListing> {
+    const res = await fetch(this.buildUrl("/api/file-tree"));
+    if (!res.ok) throw new Error(`Failed to list project tree: ${res.status}`);
     return res.json();
   }
 

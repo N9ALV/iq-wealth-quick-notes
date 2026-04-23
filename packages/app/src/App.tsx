@@ -4,6 +4,7 @@ import { detectBackend } from "./detect-backend";
 import { Canvas } from "./Canvas";
 import { PageCard } from "./PageCard";
 import { PathSwitcher } from "./PathSwitcher";
+import { ProjectTreeSidebar } from "./ProjectTreeSidebar";
 
 interface RequestedPathState {
   rawPath: string | null;
@@ -101,6 +102,7 @@ export function App() {
   const [allPages, setAllPages] = useState<Page[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [layout, setLayout] = useState<ProjectLayout>({ pages: {} });
+  const [pathSwitcherDismissCount, setPathSwitcherDismissCount] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [requestedPathState, setRequestedPathState] = useState<RequestedPathState>(
@@ -267,6 +269,7 @@ export function App() {
 
   const handleCanvasPointerDown = useCallback(() => {
     setSelectedId(null);
+    setPathSwitcherDismissCount((count) => count + 1);
   }, []);
 
   if (loading) {
@@ -280,10 +283,27 @@ export function App() {
   const displayPath = requestedPathState.rawPath ?? backend?.info.projectPath;
   const workspaceName = getWorkspaceName(displayPath);
   const isSinglePageMode = Boolean(requestedPathState.pageId);
+  const firstPage = pages[0];
+  const firstPageLayout = firstPage ? layout.pages[firstPage.id] : null;
+  const firstPageFrame = firstPage
+    ? {
+        x: firstPageLayout?.x ?? 0,
+        y: firstPageLayout?.y ?? 0,
+        width: firstPageLayout?.width ?? 680,
+        height: firstPageLayout?.height ?? 500,
+      }
+    : null;
+  const initialWorldCenter = firstPageFrame
+    ? {
+        x: firstPageFrame.x + firstPageFrame.width / 2,
+        y: firstPageFrame.y + firstPageFrame.height / 2,
+      }
+    : null;
+  const initialWorldCenterKey = `${displayPath ?? "browser"}:${firstPage?.id ?? "none"}`;
 
   return (
     <>
-      <div className="fixed top-4 left-4 z-[110] w-[calc(100vw-2rem)] max-w-[380px] sm:top-5 sm:left-5 sm:w-[min(380px,calc(100vw-40px))]">
+      <div className="fixed top-[40px] left-[40px] z-[110] max-w-[calc(100vw-56px)] sm:max-w-[calc(100vw-88px)]">
         {backend ? (
           <PathSwitcher
             backend={backend}
@@ -292,10 +312,23 @@ export function App() {
             projectPath={backend.info.projectPath ?? null}
             pages={allPages}
             buildLocationForPath={buildLocationForPath}
+            dismissCount={pathSwitcherDismissCount}
           />
         ) : null}
       </div>
-      <Canvas onPointerDownOnCanvas={handleCanvasPointerDown}>
+      {backend ? (
+        <ProjectTreeSidebar
+          backend={backend}
+          projectPath={backend.info.projectPath ?? null}
+          currentPath={displayPath ?? null}
+          buildLocationForPath={buildLocationForPath}
+        />
+      ) : null}
+      <Canvas
+        onPointerDownOnCanvas={handleCanvasPointerDown}
+        initialWorldCenter={initialWorldCenter}
+        initialWorldCenterKey={initialWorldCenterKey}
+      >
         {pages.map((page) => {
           const pos = layout.pages[page.id] || { x: 0, y: 0 };
           return (

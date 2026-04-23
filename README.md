@@ -33,13 +33,21 @@ The canvas is part of the product, but it is not the whole product. You can open
 npx roughdraft
 ```
 
-This starts Roughdraft locally and opens it in your browser.
+This starts Roughdraft locally and opens it automatically.
+
+On macOS, if Google Chrome is installed, Roughdraft prefers opening in a separate Chrome app window instead of a normal browser tab.
 
 ```bash
 npx roughdraft ~/writing/my-essay
 ```
 
 Open a specific project folder.
+
+```bash
+npx roughdraft ~/writing/my-essay/draft.md
+```
+
+Open a specific markdown file directly.
 
 If the local server is already running, you can also open a folder or file directly by URL:
 

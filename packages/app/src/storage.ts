@@ -32,6 +32,10 @@ export interface DirectoryListing {
   directories: DirectoryEntry[];
 }
 
+export interface ProjectTreeListing {
+  paths: string[];
+}
+
 export interface StorageBackend {
   info: BackendInfo;
   canManageProjects: boolean;
@@ -45,6 +49,7 @@ export interface StorageBackend {
   saveAsset(file: File): Promise<StoredAsset>;
   resolveFileUrl(path: string): string | null;
   listDirectories(path?: string): Promise<DirectoryListing>;
+  listProjectTree(): Promise<ProjectTreeListing>;
   openProject(path: string): Promise<void>;
   createProject(path: string): Promise<void>;
 }

@@ -34,6 +34,10 @@ interface DirectoryListing {
   directories: DirectoryEntry[];
 }
 
+interface ProjectTreeListing {
+  paths: string[];
+}
+
 function readProjectFile(projectDir: string): ProjectData {
   const filePath = path.join(projectDir, "roughdraft.json");
   try {
@@ -143,6 +147,46 @@ function listDirectories(dir: string): DirectoryListing {
     parentPath: parentPath === dir ? null : parentPath,
     directories: entries,
   };
+}
+
+function toCanonicalRelativePath(projectDir: string, absolutePath: string, isDirectory: boolean): string {
+  const relativePath = path.relative(projectDir, absolutePath);
+  const canonicalPath = relativePath.split(path.sep).join("/");
+  return isDirectory ? `${canonicalPath}/` : canonicalPath;
+}
+
+function listProjectTree(projectDir: string): ProjectTreeListing {
+  const paths: string[] = [];
+
+  const visitDirectory = (dir: string) => {
+    const entries = fs
+      .readdirSync(dir, { withFileTypes: true })
+      .slice()
+      .sort((left, right) => {
+        if (left.isDirectory() !== right.isDirectory()) {
+          return left.isDirectory() ? -1 : 1;
+        }
+        return left.name.localeCompare(right.name, undefined, { numeric: true });
+      });
+
+    for (const entry of entries) {
+      const absolutePath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        paths.push(toCanonicalRelativePath(projectDir, absolutePath, true));
+        visitDirectory(absolutePath);
+        continue;
+      }
+
+      if (entry.isFile()) {
+        paths.push(toCanonicalRelativePath(projectDir, absolutePath, false));
+      }
+    }
+  };
+
+  visitDirectory(projectDir);
+
+  return { paths };
 }
 
 export function createServer(port = 3000, projectDir?: string): void {
@@ -296,6 +340,13 @@ export function createServer(port = 3000, projectDir?: string): void {
     }
 
     res.json(listDirectories(requestedPath));
+  });
+
+  app.get("/api/file-tree", (req, res) => {
+    const projectDir = projectDirFromRequest(req, res);
+    if (!projectDir) return;
+
+    res.json(listProjectTree(projectDir));
   });
 
   app.post("/api/project/open", (req, res) => {
