@@ -6,13 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
     "@fontsource-variable/inter": "^5.2.8",
     "@joplin/turndown-plugin-gfm": "^1.0.64",
     "@pierre/trees": "1.0.0-beta.3",
+    "@tiptap/core": "^3.22.4",
     "@tiptap/extension-image": "^3.22.4",
     "@tiptap/extension-link": "^3.22.4",
     "@tiptap/extension-placeholder": "^3.22.4",
@@ -43,8 +45,10 @@
     "@types/react-dom": "^19.1.0",
     "@types/turndown": "^5.0.5",
     "@vitejs/plugin-react": "^4.5.2",
+    "jsdom": "^26.1.0",
     "tailwindcss": "^4.2.4",
     "typescript": "^5.8.3",
-    "vite": "^6.3.4"
+    "vite": "^6.3.4",
+    "vitest": "^3.2.4"
   }
 }
