@@ -151,52 +151,50 @@ export function EditorToolbar({
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkValue, setLinkValue] = useState("https://");
 
-  const toolbarState =
-    useEditorState({
-      editor,
-      selector: ({ editor: currentEditor }) => ({
-        blockType: currentEditor ? getBlockType(currentEditor) : "paragraph",
-        isBoldActive: currentEditor?.isActive("bold") ?? false,
-        isItalicActive: currentEditor?.isActive("italic") ?? false,
-        isCodeActive: currentEditor?.isActive("code") ?? false,
-        isBulletListActive: currentEditor?.isActive("bulletList") ?? false,
-        isTaskListActive: currentEditor?.isActive("taskList") ?? false,
-        isOrderedListActive: currentEditor?.isActive("orderedList") ?? false,
-        isLinkActive: currentEditor?.isActive("link") ?? false,
-        canToggleBold:
-          currentEditor?.can().chain().focus().toggleBold().run() ?? false,
-        canToggleItalic:
-          currentEditor?.can().chain().focus().toggleItalic().run() ?? false,
-        canToggleCode:
-          currentEditor?.can().chain().focus().toggleCode().run() ?? false,
-        canToggleBulletList:
-          currentEditor?.can().chain().focus().toggleBulletList().run() ?? false,
-        canToggleTaskList:
-          currentEditor?.can().chain().focus().toggleTaskList().run() ?? false,
-        canToggleOrderedList:
-          currentEditor?.can().chain().focus().toggleOrderedList().run() ??
-          false,
-        canUndo: currentEditor?.can().chain().focus().undo().run() ?? false,
-        canRedo: currentEditor?.can().chain().focus().redo().run() ?? false,
-      }),
-    }) ?? {
-      blockType: "paragraph" as BlockType,
-      isBoldActive: false,
-      isItalicActive: false,
-      isCodeActive: false,
-      isBulletListActive: false,
-      isTaskListActive: false,
-      isOrderedListActive: false,
-      isLinkActive: false,
-      canToggleBold: false,
-      canToggleItalic: false,
-      canToggleCode: false,
-      canToggleBulletList: false,
-      canToggleTaskList: false,
-      canToggleOrderedList: false,
-      canUndo: false,
-      canRedo: false,
-    };
+  const toolbarState = useEditorState({
+    editor,
+    selector: ({ editor: currentEditor }) => ({
+      blockType: currentEditor ? getBlockType(currentEditor) : "paragraph",
+      isBoldActive: currentEditor?.isActive("bold") ?? false,
+      isItalicActive: currentEditor?.isActive("italic") ?? false,
+      isCodeActive: currentEditor?.isActive("code") ?? false,
+      isBulletListActive: currentEditor?.isActive("bulletList") ?? false,
+      isTaskListActive: currentEditor?.isActive("taskList") ?? false,
+      isOrderedListActive: currentEditor?.isActive("orderedList") ?? false,
+      isLinkActive: currentEditor?.isActive("link") ?? false,
+      canToggleBold:
+        currentEditor?.can().chain().focus().toggleBold().run() ?? false,
+      canToggleItalic:
+        currentEditor?.can().chain().focus().toggleItalic().run() ?? false,
+      canToggleCode:
+        currentEditor?.can().chain().focus().toggleCode().run() ?? false,
+      canToggleBulletList:
+        currentEditor?.can().chain().focus().toggleBulletList().run() ?? false,
+      canToggleTaskList:
+        currentEditor?.can().chain().focus().toggleTaskList().run() ?? false,
+      canToggleOrderedList:
+        currentEditor?.can().chain().focus().toggleOrderedList().run() ?? false,
+      canUndo: currentEditor?.can().chain().focus().undo().run() ?? false,
+      canRedo: currentEditor?.can().chain().focus().redo().run() ?? false,
+    }),
+  }) ?? {
+    blockType: "paragraph" as BlockType,
+    isBoldActive: false,
+    isItalicActive: false,
+    isCodeActive: false,
+    isBulletListActive: false,
+    isTaskListActive: false,
+    isOrderedListActive: false,
+    isLinkActive: false,
+    canToggleBold: false,
+    canToggleItalic: false,
+    canToggleCode: false,
+    canToggleBulletList: false,
+    canToggleTaskList: false,
+    canToggleOrderedList: false,
+    canUndo: false,
+    canRedo: false,
+  };
 
   if (!editor) {
     return null;

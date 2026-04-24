@@ -9,7 +9,10 @@ import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import StarterKit from "@tiptap/starter-kit";
-import type { Mark as ProseMirrorMark, Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type {
+  Mark as ProseMirrorMark,
+  Node as ProseMirrorNode,
+} from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
@@ -194,12 +197,16 @@ const CommentHighlight = Extension.create({
           init: (_, state) => ({
             selectedCommentId: null,
             hoveredCommentId: null,
-            decorations: createCommentHighlightDecorations(state.doc, null, null),
+            decorations: createCommentHighlightDecorations(
+              state.doc,
+              null,
+              null,
+            ),
           }),
           apply: (tr, pluginState) => {
-            const meta = tr.getMeta(
-              commentHighlightPluginKey,
-            ) as CommentHighlightMeta | undefined;
+            const meta = tr.getMeta(commentHighlightPluginKey) as
+              | CommentHighlightMeta
+              | undefined;
 
             if (!meta && !tr.docChanged) {
               return pluginState;

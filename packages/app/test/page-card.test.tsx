@@ -1,6 +1,6 @@
 import { act } from "react";
 import type { Editor } from "@tiptap/react";
-import { createRoot, type Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Canvas } from "../src/Canvas";
 import { PageCard, shouldDismissCommentThread } from "../src/PageCard";
@@ -130,10 +130,13 @@ async function flushAnimationFrame() {
 async function selectText(editor: Editor, text: string) {
   const range = findTextRange(editor, text);
   expect(range).not.toBeNull();
+  if (!range) {
+    throw new Error(`Could not find text range for "${text}"`);
+  }
 
   await act(async () => {
     editor.commands.focus();
-    editor.commands.setTextSelection(range!);
+    editor.commands.setTextSelection(range);
   });
 
   await flushReact();
@@ -292,8 +295,9 @@ describe("PageCard comment thread dismissal", () => {
 describe("PageCard editor integration", () => {
   beforeEach(() => {
     vi.useRealTimers();
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
-      .IS_REACT_ACT_ENVIRONMENT = true;
+    (
+      globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
       function getBoundingClientRect() {
         const isEditor = this.classList.contains("ProseMirror");
@@ -419,7 +423,9 @@ describe("PageCard editor integration", () => {
     );
 
     await selectText(editor, "bold");
-    expect(getToolbarButton(rendered.container, "Bold").getAttribute("aria-pressed")).toBe("true");
+    expect(
+      getToolbarButton(rendered.container, "Bold").getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
   it("external page content updates replace editor content when unfocused", async () => {
@@ -473,7 +479,8 @@ describe("PageCard editor integration", () => {
 
     await selectText(editor, "alpha");
     expect(
-      rendered.container.querySelector(".document-comment-fallback")?.textContent,
+      rendered.container.querySelector(".document-comment-fallback")
+        ?.textContent,
     ).toContain("Comment body");
 
     await act(async () => {
@@ -489,7 +496,8 @@ describe("PageCard editor integration", () => {
     });
 
     expect(
-      rendered.container.querySelector(".document-comment-fallback")?.textContent,
+      rendered.container.querySelector(".document-comment-fallback")
+        ?.textContent,
     ).toContain("Comment body");
   });
 
@@ -507,7 +515,8 @@ describe("PageCard editor integration", () => {
     await selectText(rendered.getEditor(), "alpha");
 
     expect(
-      rendered.container.querySelector(".document-comment-fallback")?.textContent,
+      rendered.container.querySelector(".document-comment-fallback")
+        ?.textContent,
     ).toContain("Comment body");
   });
 
@@ -537,7 +546,9 @@ describe("PageCard editor integration", () => {
     await rendered.rerender({ x: 140, y: 180, selected: false });
 
     expect(rendered.getEditor().getText()).toContain("Hello canvas updated");
-    expect(rendered.getEditor().state.selection.from).toBe(initialSelection.from);
+    expect(rendered.getEditor().state.selection.from).toBe(
+      initialSelection.from,
+    );
     expect(rendered.getEditor().state.selection.to).toBe(initialSelection.to);
     expect(getEditable(rendered.container)).toBe(initialEditable);
   });

@@ -397,10 +397,8 @@ const PageCardEditorSurface = memo(function PageCardEditorSurface({
       equalityFn: areCommentIdListsEqual,
     }) ?? [];
 
-  const { commentGroups, contentHeight, measureLayout } = useCommentAnchorLayout(
-    editor,
-    comments.size > 0,
-  );
+  const { commentGroups, contentHeight, measureLayout } =
+    useCommentAnchorLayout(editor, comments.size > 0);
 
   useEffect(() => {
     onEditorReady?.(editor);
@@ -782,7 +780,10 @@ const PageCardEditorSurface = memo(function PageCardEditorSurface({
   }
 
   return (
-    <div className="cursor-text bg-transparent" onPointerDown={handleBodyPointerDown}>
+    <div
+      className="cursor-text bg-transparent"
+      onPointerDown={handleBodyPointerDown}
+    >
       {!documentToolbarHost
         ? toolbar
         : createPortal(toolbar, documentToolbarHost)}
