@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createServer as createHttpServer, type Server } from "node:http";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "./index";
 import {
@@ -74,6 +75,9 @@ describe("cli", () => {
   let runningPids: Set<number>;
   let serverByPid: Map<number, StartedServer>;
   let portByPid: Map<number, number>;
+  const serverRoot = path.resolve(
+    fileURLToPath(new URL("../../..", import.meta.url)),
+  );
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "roughdraft-cli-"));
@@ -137,6 +141,7 @@ describe("cli", () => {
         const { app } = createApp({
           port,
           projectDir: nextProjectDir,
+          serverRoot,
           staticDirPath: nextProjectDir,
         });
         const started = await listenOnLoopbackServers(port, app);
@@ -295,6 +300,7 @@ describe("cli", () => {
               backend: "local-files",
               port: 3000,
               projectDir,
+              serverRoot,
             }),
             {
               status: 200,
@@ -363,6 +369,7 @@ describe("cli", () => {
               backend: "local-files",
               port: 3000,
               projectDir,
+              serverRoot,
             }),
             {
               status: 200,
@@ -405,5 +412,96 @@ describe("cli", () => {
     expect(test.logs).toContain(
       "  Comment ids are document-local and usually look like `c1`, `c2`, `c3`.",
     );
+  });
+
+  it("starts a new server when the preferred port belongs to another checkout", async () => {
+    const stateFilePath = path.join(stateDir, "server.json");
+    const otherServerRoot = path.join(tempDir, "other-checkout");
+    let spawnedPort: number | null = null;
+    let spawnedProjectDir: string | null = null;
+    let spawned = false;
+
+    fs.mkdirSync(path.dirname(stateFilePath), { recursive: true });
+    fs.writeFileSync(
+      stateFilePath,
+      JSON.stringify({
+        port: 3000,
+        pid: 424242,
+        startedAt: new Date().toISOString(),
+        url: "http://localhost:3000",
+      }),
+    );
+
+    const deps = createCliDependencies({
+      env: {
+        ...process.env,
+        ROUGHDRAFT_STATE_DIR: stateDir,
+      },
+      cwd: projectDir,
+      fetchImpl: async (input) => {
+        const url =
+          input instanceof URL
+            ? input
+            : new URL(
+                typeof input === "string" ? input : input.url,
+                "http://localhost",
+              );
+
+        if (url.pathname !== "/api/status") {
+          throw new Error("Unexpected request");
+        }
+
+        if (url.port === "3000") {
+          return new Response(
+            JSON.stringify({
+              backend: "local-files",
+              port: 3000,
+              projectDir: path.join(tempDir, "other-project"),
+              serverRoot: otherServerRoot,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+
+        if (url.port === "3001" && spawned) {
+          return new Response(
+            JSON.stringify({
+              backend: "local-files",
+              port: 3001,
+              projectDir,
+              serverRoot,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+
+        throw new Error("connect ECONNREFUSED");
+      },
+      findAvailablePortImpl: async () => 3001,
+      spawnServerProcess: async ({ port, projectDir: nextProjectDir }) => {
+        spawned = true;
+        spawnedPort = port;
+        spawnedProjectDir = nextProjectDir;
+        return { pid: 1001 };
+      },
+      isProcessRunning: (pid) => pid === 424242,
+      stopProcess: async () => {},
+      openUrl: () => "disabled",
+      log: () => {},
+      error: () => {},
+    });
+
+    const result = await ensureServerRunning(deps, { projectDir });
+
+    expect(result.reused).toBe(false);
+    expect(spawnedPort).toBe(3001);
+    expect(spawnedProjectDir).toBe(projectDir);
+    expect(result.server.port).toBe(3001);
   });
 });

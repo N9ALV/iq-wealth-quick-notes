@@ -520,6 +520,38 @@ describe("PageCard editor integration", () => {
     ).toContain("Comment body");
   });
 
+  it("centers document layout when there are no comments", async () => {
+    const rendered = await renderPageCard({
+      page: {
+        id: "doc-6",
+        title: "Doc 6",
+        content: "Just text",
+      },
+      mode: "document",
+      selected: true,
+    });
+
+    expect(
+      rendered.container
+        .querySelector(".document-page-shell")
+        ?.classList.contains("document-page-shell-no-comments"),
+    ).toBe(true);
+
+    await rendered.rerender({
+      page: {
+        id: "doc-6",
+        title: "Doc 6",
+        content: "{==alpha==}{>>Comment body<<}\n\nJust text",
+      },
+    });
+
+    expect(
+      rendered.container
+        .querySelector(".document-page-shell")
+        ?.classList.contains("document-page-shell-no-comments"),
+    ).toBe(false);
+  });
+
   it("canvas props churn does not lose editor content or selection", async () => {
     const rendered = await renderPageCard({
       page: {

@@ -22,6 +22,7 @@ import {
   createEditorExtensions,
 } from "./editor-extensions";
 import { EditorToolbar } from "./EditorToolbar";
+import { cn } from "./lib/utils";
 import { toHtml } from "./markdown";
 import type { Page, StorageBackend } from "./storage";
 import { useCommentAnchorLayout } from "./useCommentAnchorLayout";
@@ -361,8 +362,8 @@ const PageCardEditorSurface = memo(function PageCardEditorSurface({
         attributes: {
           class:
             mode === "canvas"
-              ? "tiptap min-h-[120px] text-[1.05rem] leading-8 text-slate-800 outline-none selection:bg-sky-100"
-              : "tiptap min-h-[70vh] text-[1.08rem] leading-8 text-slate-800 outline-none selection:bg-sky-100",
+              ? "tiptap min-h-[120px] selection:bg-sky-100"
+              : "tiptap min-h-[70vh] selection:bg-sky-100",
         },
         handleDrop: (_view, event) => {
           const files = Array.from(event.dataTransfer?.files ?? []);
@@ -711,6 +712,7 @@ const PageCardEditorSurface = memo(function PageCardEditorSurface({
 
   const isCanvasMode = mode === "canvas";
   const showCanvasRail = isCanvasMode && comments.size > 0;
+  const hasComments = comments.size > 0;
   const activeComments = activeCommentIds
     .map((commentId) => comments.get(commentId))
     .filter((comment): comment is CriticComment => Boolean(comment));
@@ -721,22 +723,26 @@ const PageCardEditorSurface = memo(function PageCardEditorSurface({
       variant={isCanvasMode ? "canvas" : "document"}
     />
   );
+  const contentCardClass =
+    "rounded-[0.9rem] border border-[#E9E9E8] bg-white shadow-[0_18px_44px_rgba(57,47,38,0.08)]";
 
   if (isCanvasMode) {
     return (
       <div
-        className="cursor-text rounded-b-3xl bg-white px-5 pt-4 pb-6"
+        className="cursor-text rounded-b-3xl bg-[#FCFCFC] px-5 pt-4 pb-6"
         onPointerDown={handleBodyPointerDown}
       >
         {toolbar}
         <div className="relative">
-          <EditorContextMenu
-            editor={editor}
-            backend={backend}
-            onAddComment={handleAddComment}
-          >
-            <EditorContent editor={editor} />
-          </EditorContextMenu>
+          <div className={cn(contentCardClass, "px-8 py-5")}>
+            <EditorContextMenu
+              editor={editor}
+              backend={backend}
+              onAddComment={handleAddComment}
+            >
+              <EditorContent editor={editor} />
+            </EditorContextMenu>
+          </div>
           {showCanvasRail ? (
             <div
               className="absolute top-0"
@@ -787,7 +793,12 @@ const PageCardEditorSurface = memo(function PageCardEditorSurface({
       {!documentToolbarHost
         ? toolbar
         : createPortal(toolbar, documentToolbarHost)}
-      <div className="document-page-shell">
+      <div
+        className={cn(
+          "document-page-shell",
+          !hasComments && "document-page-shell-no-comments",
+        )}
+      >
         <div className="document-page-main min-w-0">
           {activeComments.length > 0 ? (
             <CommentEditorList
@@ -814,13 +825,15 @@ const PageCardEditorSurface = memo(function PageCardEditorSurface({
             />
           ) : null}
           <div className="pb-24">
-            <EditorContextMenu
-              editor={editor}
-              backend={backend}
-              onAddComment={handleAddComment}
-            >
-              <EditorContent editor={editor} />
-            </EditorContextMenu>
+            <div className={cn(contentCardClass, "px-10 py-8 sm:px-12 sm:py-9")}>
+              <EditorContextMenu
+                editor={editor}
+                backend={backend}
+                onAddComment={handleAddComment}
+              >
+                <EditorContent editor={editor} />
+              </EditorContextMenu>
+            </div>
           </div>
         </div>
         <DocumentCommentRail
@@ -921,7 +934,7 @@ export function PageCard({
       {isCanvasMode ? (
         <div className="relative" style={{ width: CANVAS_CONTENT_WIDTH }}>
           <div
-            className={`rounded-3xl border bg-white/95 shadow-[0_18px_50px_rgba(15,23,42,0.14)] backdrop-blur transition-[border-color,box-shadow] ${
+            className={`rounded-3xl border bg-[#FCFCFC] shadow-[0_18px_50px_rgba(15,23,42,0.14)] backdrop-blur transition-[border-color,box-shadow] ${
               selected
                 ? "border-sky-300 shadow-[0_28px_72px_rgba(14,116,144,0.22)]"
                 : "border-slate-200/90"

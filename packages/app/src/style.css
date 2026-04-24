@@ -42,7 +42,10 @@
 
 @layer components {
   .tiptap {
-    @apply min-h-[120px] text-[1.05rem] leading-8 text-slate-800 outline-none;
+    @apply min-h-[120px] text-slate-800 outline-none;
+    --editor-font-size: 15px;
+    font-size: var(--editor-font-size);
+    line-height: 1.9;
   }
 
   .tiptap p.is-editor-empty:first-child::before {
@@ -54,11 +57,13 @@
   }
 
   .tiptap h1 {
-    @apply mt-[0.35em] mb-4 text-[2rem] font-semibold leading-tight tracking-tight text-slate-950;
+    @apply mt-[0.35em] mb-4 font-semibold leading-tight tracking-tight text-slate-950;
+    font-size: 1.905em;
   }
 
   .tiptap h2 {
-    @apply mt-6 mb-3 text-[1.5rem] font-semibold leading-tight tracking-tight text-slate-950;
+    @apply mt-6 mb-3 font-semibold leading-tight tracking-tight text-slate-950;
+    font-size: 1.429em;
   }
 
   .tiptap p {
@@ -267,6 +272,11 @@
     .document-comment-rail {
       display: block;
     }
+
+    .document-page-shell.document-page-shell-no-comments {
+      grid-template-columns: minmax(0, 43.75rem);
+      justify-content: center;
+    }
   }
 }
 
@@ -314,7 +324,7 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
+  --background: #fcfcfc;
   --foreground: oklch(0.141 0.005 285.823);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.141 0.005 285.823);

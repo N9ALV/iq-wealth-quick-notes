@@ -29,6 +29,7 @@ export interface RoughdraftServerState {
 interface StatusPayload {
   backend?: string;
   projectDir?: string;
+  serverRoot?: string;
   port?: number;
 }
 
@@ -79,6 +80,10 @@ interface ReusableServer {
   pid: number | null;
   startedAt: string | null;
 }
+
+const currentServerRoot = path.resolve(
+  fileURLToPath(new URL("../../..", import.meta.url)),
+);
 
 function hasChromeAppMode() {
   if (process.platform !== "darwin") return false;
@@ -501,16 +506,25 @@ async function normalizeTrackedState(
 
 async function findReusableServer(
   deps: CliDependencies,
+  options: { serverRoot?: string } = {},
 ): Promise<ReusableServer | null> {
   const stateFilePath = getServerStateFilePath(deps.env);
   const persistedState = readServerStateFromDisk(stateFilePath);
   const preferredPort = parsePort(deps.env.PORT);
+  const expectedServerRoot = path.resolve(
+    options.serverRoot ?? currentServerRoot,
+  );
+
+  const matchesServerRoot = (payload: StatusPayload | null) =>
+    payload?.serverRoot
+      ? path.resolve(payload.serverRoot) === expectedServerRoot
+      : false;
 
   if (persistedState) {
     const pidRunning = deps.isProcessRunning(persistedState.pid);
     const statusPayload = await getStatusPayload(persistedState.port, deps);
 
-    if (pidRunning && statusPayload) {
+    if (pidRunning && statusPayload && matchesServerRoot(statusPayload)) {
       const normalizedState = await normalizeTrackedState(
         persistedState,
         stateFilePath,
@@ -526,7 +540,7 @@ async function findReusableServer(
 
     removeServerStateFile(stateFilePath);
 
-    if (statusPayload) {
+    if (statusPayload && matchesServerRoot(statusPayload)) {
       return {
         port: persistedState.port,
         url: buildPublicBaseUrl(persistedState.port),
@@ -538,7 +552,7 @@ async function findReusableServer(
   }
 
   const preferredStatus = await getStatusPayload(preferredPort, deps);
-  if (!preferredStatus) {
+  if (!preferredStatus || !matchesServerRoot(preferredStatus)) {
     return null;
   }
 
@@ -554,7 +568,9 @@ async function findReusableServer(
 export async function readRunningServerState(
   deps: CliDependencies,
 ): Promise<RoughdraftServerState | null> {
-  const reusableServer = await findReusableServer(deps);
+  const reusableServer = await findReusableServer(deps, {
+    serverRoot: currentServerRoot,
+  });
   if (
     !reusableServer?.tracked ||
     reusableServer.pid === null ||
@@ -575,7 +591,9 @@ export async function ensureServerRunning(
   deps: CliDependencies,
   options: { projectDir?: string } = {},
 ): Promise<EnsureRunningResult> {
-  const reusableServer = await findReusableServer(deps);
+  const reusableServer = await findReusableServer(deps, {
+    serverRoot: currentServerRoot,
+  });
   if (reusableServer) {
     return { server: reusableServer, reused: true, portChanged: false };
   }

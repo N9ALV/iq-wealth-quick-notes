@@ -693,7 +693,7 @@ export function App() {
   );
 
   if (loading) {
-    return <div className="h-screen bg-white" aria-hidden="true" />;
+    return <div className="h-screen bg-[#FCFCFC]" aria-hidden="true" />;
   }
 
   const shouldShowHomepage = !requestedPathState.rawPath && !demoModeEnabled;
@@ -777,7 +777,7 @@ export function App() {
   const sidebarToggleLabel = sidebarVisible ? "Hide sidebar" : "Show sidebar";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white text-slate-950">
+    <div className="flex h-screen overflow-hidden bg-[#FCFCFC] text-slate-950">
       {sidebarVisible ? (
         <aside
           className={`flex h-full w-[320px] max-w-[34vw] min-w-[280px] shrink-0 flex-col border-r ${
@@ -913,10 +913,10 @@ export function App() {
             </Button>
           </div>
         ) : null}
-        <div className="flex h-full flex-col overflow-hidden bg-white">
+        <div className="flex h-full flex-col overflow-hidden bg-[#FCFCFC]">
           {isDocumentMode ? (
             <>
-              <div className="border-b border-slate-200 bg-white/92 px-5 py-2 backdrop-blur sm:px-8">
+              <div className="border-b border-slate-200 bg-[#FCFCFC]/92 px-5 py-2 backdrop-blur sm:px-8">
                 <div className="flex w-full items-center gap-2">
                   <Button
                     type="button"

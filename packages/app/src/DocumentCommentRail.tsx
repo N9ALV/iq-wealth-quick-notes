@@ -176,12 +176,11 @@ export function DocumentCommentRail({
               ref={(node) => setGroupRef(layout.key, node)}
               data-comment-thread-container="true"
               className={cn(
-                "absolute left-0 right-0 rounded-2xl border bg-white/95 transition-all duration-200 ease-out will-change-transform",
+                "absolute left-0 right-0 rounded-2xl border bg-white transition-all duration-200 ease-out will-change-transform",
                 isSelected
-                  ? "-translate-x-2 border-slate-300 shadow-[0_22px_48px_rgba(15,23,42,0.18)]"
-                  : isHovered
-                    ? "border-slate-300/80"
-                    : "border-slate-200/90",
+                  ? "border-[#DFDFDC] shadow-[0_20px_48px_rgba(57,47,38,0.14)]"
+                  : "border-[#E9E9E8] shadow-[0_18px_44px_rgba(57,47,38,0.08)]",
+                isSelected && "-translate-x-2",
                 isExpanded ? "cursor-default" : "cursor-pointer",
               )}
               style={{ top: layout.railTop }}

@@ -63,6 +63,9 @@ export function CommentEditorList({
     () => new Map(comments.map((comment) => [comment.id, comment])),
     [comments],
   );
+  const hasActiveSelection =
+    !!selectedCommentId &&
+    comments.some((comment) => comment.id === selectedCommentId);
 
   useEffect(() => {
     const validCommentIds = new Set(comments.map((comment) => comment.id));
@@ -185,7 +188,12 @@ export function CommentEditorList({
       data-comment-thread-container="true"
       className={cn(
         variant === "banner"
-          ? "space-y-2 rounded-2xl border border-amber-200/80 bg-amber-50/70 p-3"
+          ? cn(
+              "space-y-2 rounded-2xl border bg-white p-3",
+              hasActiveSelection
+                ? "border-[#DFDFDC] shadow-[0_20px_48px_rgba(57,47,38,0.14)]"
+                : "border-[#E9E9E8] shadow-[0_18px_44px_rgba(57,47,38,0.08)]",
+            )
           : "space-y-1.5 px-4 py-3",
         className,
       )}
@@ -341,9 +349,9 @@ function CommentThreadNode({
   const bodyTone =
     variant === "banner"
       ? isSelected
-        ? "bg-white/85"
+        ? "bg-white"
         : isHovered
-          ? "bg-white/70"
+          ? "bg-white"
           : "bg-transparent"
       : "bg-transparent";
   const threadLineTone =
