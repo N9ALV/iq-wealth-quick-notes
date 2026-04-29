@@ -399,7 +399,9 @@
   }
 
   .tiptap table {
-    @apply min-w-full table-fixed border-collapse;
+    @apply table-fixed border-collapse;
+    /* biome-ignore lint/complexity/noImportantStyles: override Tiptap inline min-width */
+    min-width: 100% !important;
   }
 
   .tiptap th,
