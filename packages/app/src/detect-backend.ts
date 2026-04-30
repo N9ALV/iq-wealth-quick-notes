@@ -1,11 +1,14 @@
 import type { StorageBackend } from "./storage";
 import { ApiBackend } from "./api-backend";
 import { LocalStorageBackend } from "./local-storage-backend";
+import { RemoteBackend } from "./remote-backend";
 
 export async function detectBackend(): Promise<StorageBackend> {
   if (import.meta.env.VITE_PREVIEW_WEB === "1") {
     return new LocalStorageBackend();
   }
+
+  const sessionId = readSessionIdFromUrl();
 
   try {
     const res = await fetch("/api/status");
@@ -14,7 +17,16 @@ export async function detectBackend(): Promise<StorageBackend> {
         backend?: string;
         projectDir?: string;
         stateless?: boolean;
+        capabilities?: { remoteDocuments?: boolean };
       };
+
+      if (sessionId && payload.capabilities?.remoteDocuments) {
+        try {
+          return await RemoteBackend.create(sessionId);
+        } catch (error) {
+          console.error("Could not initialize remote backend:", error);
+        }
+      }
 
       if (payload.backend === "local-files") {
         return new ApiBackend({
@@ -31,4 +43,11 @@ export async function detectBackend(): Promise<StorageBackend> {
     // network error — no server available
   }
   return new LocalStorageBackend();
+}
+
+function readSessionIdFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const session = params.get("session")?.trim();
+  return session && session.length > 0 ? session : null;
 }
