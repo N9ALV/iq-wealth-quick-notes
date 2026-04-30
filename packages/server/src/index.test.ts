@@ -1,3 +1,4 @@
+import { type AddressInfo } from "node:net";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -321,6 +322,7 @@ describe("createApp", () => {
       capabilities: {
         projectPathRequired: true,
         fileSystemBrowsing: true,
+        remoteDocuments: true,
       },
     });
     expect(response.body).not.toHaveProperty("projectDir");
@@ -519,5 +521,191 @@ describe("createApp", () => {
         "utf-8",
       ),
     ).toBe("png bytes");
+  });
+
+  it("advertises remote-document support in the status capabilities", async () => {
+    const { app } = createApp({ homeDir, staticDirPath: projectDir });
+    const response = await request(app).get("/api/status");
+    expect(response.status).toBe(200);
+    expect(response.body.capabilities).toMatchObject({
+      remoteDocuments: true,
+    });
+  });
+
+  it("registers a remote document session and returns it on GET", async () => {
+    const { app } = createApp({ homeDir, staticDirPath: projectDir });
+    const sessionId = "session-1";
+
+    const register = await request(app)
+      .post("/api/remote-document")
+      .send({
+        sessionId,
+        originPath: "/work/draft.md",
+        content: "# hello\n",
+      });
+
+    expect(register.status).toBe(201);
+    expect(register.body).toMatchObject({
+      id: sessionId,
+      version: expect.any(String),
+      viewerUrl: expect.stringContaining(`/?session=${sessionId}`),
+    });
+
+    const fetchResponse = await request(app).get(
+      `/api/remote-document/${sessionId}`,
+    );
+    expect(fetchResponse.status).toBe(200);
+    expect(fetchResponse.body).toMatchObject({
+      id: sessionId,
+      originPath: "/work/draft.md",
+      content: "# hello\n",
+      version: register.body.version,
+    });
+  });
+
+  it("rejects remote-document register without required fields", async () => {
+    const { app } = createApp({ homeDir, staticDirPath: projectDir });
+    const response = await request(app)
+      .post("/api/remote-document")
+      .send({ sessionId: "x" });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a remote-document register with a duplicate session id", async () => {
+    const { app } = createApp({ homeDir, staticDirPath: projectDir });
+    await request(app).post("/api/remote-document").send({
+      sessionId: "dup",
+      originPath: "/a.md",
+      content: "a",
+    });
+
+    const second = await request(app).post("/api/remote-document").send({
+      sessionId: "dup",
+      originPath: "/b.md",
+      content: "b",
+    });
+    expect(second.status).toBe(409);
+  });
+
+  it("returns 404 for unknown remote document sessions", async () => {
+    const { app } = createApp({ homeDir, staticDirPath: projectDir });
+    const get = await request(app).get("/api/remote-document/missing");
+    expect(get.status).toBe(404);
+
+    const put = await request(app)
+      .put("/api/remote-document/missing")
+      .send({ content: "x" });
+    expect(put.status).toBe(404);
+  });
+
+  it("updates remote document content and bumps the version on PUT", async () => {
+    const { app } = createApp({ homeDir, staticDirPath: projectDir });
+    const register = await request(app).post("/api/remote-document").send({
+      sessionId: "s2",
+      originPath: "/draft.md",
+      content: "v1",
+    });
+
+    const update = await request(app).put("/api/remote-document/s2").send({
+      content: "v2",
+      expectedVersion: register.body.version,
+    });
+
+    expect(update.status).toBe(200);
+    expect(update.body.version).not.toBe(register.body.version);
+
+    const fetched = await request(app).get("/api/remote-document/s2");
+    expect(fetched.body.content).toBe("v2");
+    expect(fetched.body.version).toBe(update.body.version);
+  });
+
+  it("returns 409 with current state when expectedVersion is stale", async () => {
+    const { app } = createApp({ homeDir, staticDirPath: projectDir });
+    const register = await request(app).post("/api/remote-document").send({
+      sessionId: "s3",
+      originPath: "/a.md",
+      content: "v1",
+    });
+
+    await request(app).put("/api/remote-document/s3").send({
+      content: "v2",
+      expectedVersion: register.body.version,
+    });
+
+    const conflict = await request(app).put("/api/remote-document/s3").send({
+      content: "v-bad",
+      expectedVersion: register.body.version,
+    });
+
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.current).toMatchObject({
+      id: "s3",
+      content: "v2",
+    });
+  });
+
+  it("returns 404 when opening SSE for an unknown session", async () => {
+    const { app } = createApp({ homeDir, staticDirPath: projectDir });
+    const response = await request(app).get(
+      "/api/remote-document/nope/events",
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("delivers a save event over SSE when the session content is updated", async () => {
+    const { app } = createApp({ homeDir, staticDirPath: projectDir });
+    const server = app.listen(0);
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const sessionId = "sse-delivers";
+
+      const register = await fetch(`http://127.0.0.1:${port}/api/remote-document`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          originPath: "/draft.md",
+          content: "before",
+        }),
+      });
+      expect(register.status).toBe(201);
+
+      const events = await fetch(
+        `http://127.0.0.1:${port}/api/remote-document/${sessionId}/events`,
+      );
+      expect(events.status).toBe(200);
+      const reader = events.body?.getReader();
+      if (!reader) throw new Error("Expected SSE body");
+
+      const decoder = new TextDecoder();
+      const readChunk = async () => {
+        const { value, done } = await reader.read();
+        if (done) return "";
+        return decoder.decode(value);
+      };
+
+      const connected = await readChunk();
+      expect(connected).toContain("event: connected");
+
+      const update = await fetch(
+        `http://127.0.0.1:${port}/api/remote-document/${sessionId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: "after" }),
+        },
+      );
+      expect(update.status).toBe(200);
+
+      let saveChunk = "";
+      while (!saveChunk.includes("event: save")) {
+        saveChunk += await readChunk();
+      }
+      expect(saveChunk).toContain('"content":"after"');
+
+      reader.cancel();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

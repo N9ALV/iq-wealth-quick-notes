@@ -78,7 +78,52 @@ interface OpenRequestPayload {
   url?: string;
 }
 
+interface RemoteSession {
+  id: string;
+  originPath: string;
+  content: string;
+  version: string;
+  client: Response | null;
+  disconnectedAt: number | null;
+}
+
+interface RemoteDocumentRegisterPayload {
+  sessionId?: string;
+  originPath?: string;
+  content?: string;
+}
+
+interface RemoteDocumentSavePayload {
+  content?: string;
+  expectedVersion?: string;
+}
+
+const REMOTE_SESSION_TTL_MS = 5 * 60 * 1000;
+const REMOTE_SESSION_SWEEP_INTERVAL_MS = 60 * 1000;
+const REMOTE_SESSION_KEEPALIVE_MS = 15 * 1000;
+
 let nextOpenRequestClientId = 1;
+
+function remoteSessionVersion(content: string): string {
+  const hash = crypto.createHash("sha256").update(content).digest("hex");
+  return `${hash}:${crypto.randomUUID()}`;
+}
+
+function remoteSessionView(
+  session: RemoteSession,
+): {
+  id: string;
+  originPath: string;
+  content: string;
+  version: string;
+} {
+  return {
+    id: session.id,
+    originPath: session.originPath,
+    content: session.content,
+    version: session.version,
+  };
+}
 
 function listMdFiles(projectDir: string): string[] {
   try {
@@ -334,6 +379,20 @@ export function createApp(options: CreateAppOptions = {}): CreateAppResult {
   const fetchImpl = options.fetchImpl ?? fetch;
   const app = express();
   const openRequestClients = new Set<OpenRequestClient>();
+  const remoteSessions = new Map<string, RemoteSession>();
+
+  const remoteSessionSweeper = setInterval(() => {
+    const now = Date.now();
+    for (const [id, session] of remoteSessions) {
+      if (
+        session.disconnectedAt !== null &&
+        now - session.disconnectedAt > REMOTE_SESSION_TTL_MS
+      ) {
+        remoteSessions.delete(id);
+      }
+    }
+  }, REMOTE_SESSION_SWEEP_INTERVAL_MS);
+  remoteSessionSweeper.unref?.();
 
   app.use(express.json({ limit: "50mb" }));
 
@@ -573,6 +632,7 @@ export function createApp(options: CreateAppOptions = {}): CreateAppResult {
       capabilities: {
         projectPathRequired: true,
         fileSystemBrowsing: true,
+        remoteDocuments: true,
       },
     });
   });
@@ -640,6 +700,143 @@ export function createApp(options: CreateAppOptions = {}): CreateAppResult {
       })}\n\n`,
     );
     res.json({ delivered: true });
+  });
+
+  app.post("/api/remote-document", (req, res) => {
+    const payload = req.body as RemoteDocumentRegisterPayload;
+    const sessionId =
+      typeof payload.sessionId === "string" && payload.sessionId.trim().length > 0
+        ? payload.sessionId.trim()
+        : null;
+    const originPath =
+      typeof payload.originPath === "string" &&
+      payload.originPath.trim().length > 0
+        ? payload.originPath.trim()
+        : null;
+    const content = typeof payload.content === "string" ? payload.content : null;
+
+    if (!sessionId || !originPath || content === null) {
+      res
+        .status(400)
+        .json({ error: "sessionId, originPath, and content are required" });
+      return;
+    }
+
+    if (remoteSessions.has(sessionId)) {
+      res.status(409).json({ error: "session already exists" });
+      return;
+    }
+
+    const session: RemoteSession = {
+      id: sessionId,
+      originPath,
+      content,
+      version: remoteSessionVersion(content),
+      client: null,
+      disconnectedAt: Date.now(),
+    };
+    remoteSessions.set(sessionId, session);
+
+    const host = req.get("host");
+    const viewerUrl =
+      host !== undefined
+        ? `${req.protocol}://${host}/?session=${encodeURIComponent(sessionId)}`
+        : null;
+
+    res.status(201).json({
+      id: session.id,
+      version: session.version,
+      viewerUrl,
+    });
+  });
+
+  app.get("/api/remote-document/:id", (req, res) => {
+    const session = remoteSessions.get(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: "Remote document session not found" });
+      return;
+    }
+    res.json(remoteSessionView(session));
+  });
+
+  app.put("/api/remote-document/:id", (req, res) => {
+    const session = remoteSessions.get(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: "Remote document session not found" });
+      return;
+    }
+
+    const payload = req.body as RemoteDocumentSavePayload;
+    const content = typeof payload.content === "string" ? payload.content : null;
+
+    if (content === null) {
+      res.status(400).json({ error: "content is required" });
+      return;
+    }
+
+    if (
+      typeof payload.expectedVersion === "string" &&
+      payload.expectedVersion !== session.version
+    ) {
+      res.status(409).json({
+        error: "Remote document changed",
+        current: remoteSessionView(session),
+      });
+      return;
+    }
+
+    session.content = content;
+    session.version = remoteSessionVersion(content);
+
+    if (session.client) {
+      session.client.write(
+        `event: save\ndata: ${JSON.stringify({
+          content: session.content,
+          version: session.version,
+        })}\n\n`,
+      );
+    }
+
+    res.json({ id: session.id, version: session.version });
+  });
+
+  app.get("/api/remote-document/:id/events", (req, res) => {
+    const session = remoteSessions.get(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: "Remote document session not found" });
+      return;
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders?.();
+
+    if (session.client) {
+      session.client.end();
+    }
+
+    session.client = res;
+    session.disconnectedAt = null;
+
+    res.write(
+      `event: connected\ndata: ${JSON.stringify({
+        id: session.id,
+        version: session.version,
+      })}\n\n`,
+    );
+
+    const keepAlive = setInterval(() => {
+      res.write(": keep-alive\n\n");
+    }, REMOTE_SESSION_KEEPALIVE_MS);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      if (session.client === res) {
+        session.client = null;
+        session.disconnectedAt = Date.now();
+      }
+    });
   });
 
   app.get("/api/update-status", async (_req, res) => {
