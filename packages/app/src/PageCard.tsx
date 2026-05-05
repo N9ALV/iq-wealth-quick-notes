@@ -26,6 +26,7 @@ import {
   commentHighlightPluginKey,
   createEditorExtensions,
   criticChangeHighlightPluginKey,
+  SUGGESTED_PARAGRAPH_SENTINEL,
 } from "./editor-extensions";
 import { cn } from "./lib/utils";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
@@ -962,9 +963,38 @@ const RichTextEditorSurface = memo(function RichTextEditorSurface({
         handleKeyDown: (view, event) => {
           if (interactionModeRef.current !== "suggesting") return false;
 
-          // Block Enter in suggesting mode
           if (event.key === "Enter") {
             event.preventDefault();
+
+            const currentEditor = editorRef.current;
+            if (!currentEditor) return true;
+
+            const { selection } = view.state;
+            if (!selection.empty) return true;
+
+            const $from = selection.$from;
+            if (!$from.parent.isTextblock) return true;
+            if ($from.parentOffset !== $from.parent.content.size) return true;
+
+            const change = createCriticChange("addition", undefined, {
+              existingChanges: getDocumentCriticChanges(currentEditor),
+            });
+            const mark = view.state.schema.marks.criticChange.create(change);
+            const tr = view.state.tr.split(selection.from);
+            const insertPos = tr.selection.from;
+
+            tr.insert(
+              insertPos,
+              view.state.schema.text(SUGGESTED_PARAGRAPH_SENTINEL, [mark]),
+            );
+            tr.setSelection(
+              TextSelection.create(
+                tr.doc,
+                insertPos + SUGGESTED_PARAGRAPH_SENTINEL.length,
+              ),
+            );
+            tr.scrollIntoView();
+            view.dispatch(tr);
             return true;
           }
 
@@ -1081,7 +1111,10 @@ const RichTextEditorSurface = memo(function RichTextEditorSurface({
             }
           }
 
-          if (from === to) return false;
+          if (from === to) {
+            event.preventDefault();
+            return true;
+          }
 
           event.preventDefault();
 
