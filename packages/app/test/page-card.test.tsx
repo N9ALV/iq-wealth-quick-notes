@@ -255,6 +255,7 @@ type PageCardTestOptions = Partial<{
   interactionMode: "viewing" | "suggesting" | "editing";
   selected: boolean;
   focusRequestKey: string | null;
+  saveBlocked: boolean;
 }>;
 
 type RenderedPageCard = {
@@ -300,6 +301,7 @@ async function renderPageCard(
     onSaveControllerChange: (controller: DocumentSaveController | null) => {
       saveController = controller;
     },
+    saveBlocked: options.saveBlocked ?? false,
   } as const;
 
   const render = async () => {
@@ -517,6 +519,54 @@ describe("PageCard editor integration", () => {
 
     expect(rendered.onSave).toHaveBeenCalledTimes(1);
     expect(rendered.onSaveStateChange.mock.calls.at(-1)?.[0]).toBe("saved");
+  });
+
+  it("manual save reports save failure without clearing dirty state", async () => {
+    const rendered = await renderPageCard({
+      page: {
+        id: "doc-manual-save-failure-1",
+        title: "Manual Save Failure",
+        content: "Start",
+      },
+      selected: true,
+    });
+    rendered.onSave.mockRejectedValueOnce(new Error("disk unavailable"));
+
+    vi.useFakeTimers();
+
+    await insertTextAtEnd(rendered.getEditor(), " failed");
+
+    let result;
+    await act(async () => {
+      result = await rendered.getSaveController().flushSave();
+    });
+
+    expect(result).toMatchObject({ status: "error" });
+    expect(rendered.onSaveStateChange.mock.calls.at(-1)?.[0]).toBe("error");
+  });
+
+  it("manual save is blocked without calling onSave when disk state blocks saves", async () => {
+    const rendered = await renderPageCard({
+      page: {
+        id: "doc-manual-save-blocked-1",
+        title: "Manual Save Blocked",
+        content: "Start",
+      },
+      selected: true,
+    });
+
+    vi.useFakeTimers();
+    await insertTextAtEnd(rendered.getEditor(), " blocked");
+    await rendered.rerender({ saveBlocked: true });
+
+    let result;
+    await act(async () => {
+      result = await rendered.getSaveController().flushSave();
+    });
+
+    expect(result).toEqual({ status: "blocked" });
+    expect(rendered.onSave).not.toHaveBeenCalled();
+    expect(rendered.onSaveStateChange.mock.calls.at(-1)?.[0]).toBe("unsaved");
   });
 
   it("rich-text edits preserve raw YAML frontmatter on autosave", async () => {

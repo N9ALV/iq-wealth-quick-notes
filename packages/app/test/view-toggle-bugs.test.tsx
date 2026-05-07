@@ -375,6 +375,14 @@ describe("saving/saved status indicator (issue 2 fix)", () => {
     expect(onSaveDocument).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Save conflict");
   });
+
+  it("shows conflict status without replacing the existing conflict banner", async () => {
+    await renderWorkspace({ documentDiskChangeState: "conflict" });
+
+    expect(container.textContent).toContain("Save conflict");
+    expect(container.textContent).toContain("This file changed on disk");
+    expect(container.querySelector('[aria-label="Save conflict"]')).not.toBeNull();
+  });
 });
 
 describe("interaction mode preserved across view toggle (issue 3 fix)", () => {
