@@ -184,15 +184,12 @@ export function DocumentSaveStatusIndicator({
       role="status"
       aria-label={saveStatus.ariaLabel}
       className={cn(
-        "inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 rounded-[7px] border bg-white/92 px-2.5 font-mono text-[0.68rem] leading-none shadow-[0_8px_22px_rgba(15,23,42,0.08)] backdrop-blur dark:bg-slate-950/88",
+        "inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 px-1 font-mono text-[0.68rem] leading-none",
         saveStatus.tone === "success" &&
-          "border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300",
-        saveStatus.tone === "warning" &&
-          "border-amber-200 text-amber-800 dark:border-amber-800 dark:text-amber-300",
-        saveStatus.tone === "danger" &&
-          "border-red-200 text-red-700 dark:border-red-800 dark:text-red-300",
-        saveStatus.tone === "neutral" &&
-          "border-stone-200 text-stone-500 dark:border-slate-700 dark:text-slate-300",
+          "text-emerald-700 dark:text-emerald-300",
+        saveStatus.tone === "warning" && "text-amber-800 dark:text-amber-300",
+        saveStatus.tone === "danger" && "text-red-700 dark:text-red-300",
+        saveStatus.tone === "neutral" && "text-stone-500 dark:text-slate-300",
       )}
     >
       <SaveStatusIcon
