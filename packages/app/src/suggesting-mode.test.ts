@@ -130,151 +130,344 @@ function suggestingBackspace(editor: Editor) {
 }
 
 /**
- * Helper: simulate typing over a range selection in suggesting mode.
+ * Helper: simulate Ctrl+Backspace (word-delete backward) in suggesting mode.
  *
- * Mirrors the `handleTextInput` logic in PageCard.tsx for the `from !== to`
- * case. When the selection is entirely within addition/substitution-new
- * marks, the text is replaced in-place (preserving the addition mark).
- * Otherwise a substitution is created.
+ * Mirrors the handleKeyDown logic from PageCard.tsx for
+ * event.key === "Backspace" && (event.ctrlKey || event.altKey).
  */
-function suggestingReplaceRange(editor: Editor, text: string) {
+function suggestingCtrlBackspace(editor: Editor) {
   const { state } = editor.view;
-  const from = state.selection.from;
-  const to = state.selection.to;
-  if (from === to) {
-    throw new Error("suggestingReplaceRange requires a non-empty selection");
-  }
+  const { selection } = state;
+  const criticMarkType = state.schema.marks.criticChange;
 
-  const tr = state.tr;
-  const markType = state.schema.marks.criticChange;
+  const $pos = state.doc.resolve(selection.from);
+  const blockStart = $pos.start($pos.depth);
+
+  const textBefore = state.doc.textBetween(blockStart, selection.from);
+  const match = textBefore.match(/\S+\s*$/);
+  const from = match
+    ? selection.from - match[0].length
+    : Math.max(blockStart, selection.from - 1);
+  const to = selection.to;
+
+  if (from === to) return;
 
   const isAdditionKind = (m: ProseMirrorMark) =>
-    m.type === markType &&
+    m.type === criticMarkType &&
     (m.attrs.kind === "addition" || m.attrs.kind === "substitution-new");
 
-  let allAddition = true;
+  type Segment = { from: number; to: number; isAddition: boolean };
+  const segments: Segment[] = [];
   state.doc.nodesBetween(from, to, (node, pos) => {
     if (!node.isText) return;
     const segFrom = Math.max(pos, from);
     const segTo = Math.min(pos + node.nodeSize, to);
     if (segFrom >= segTo) return;
-    if (!node.marks.some(isAdditionKind)) {
-      allAddition = false;
+    const isAdd = node.marks.some(isAdditionKind);
+    const prev = segments[segments.length - 1];
+    if (prev && prev.isAddition === isAdd && prev.to === segFrom) {
+      prev.to = segTo;
+    } else {
+      segments.push({ from: segFrom, to: segTo, isAddition: isAdd });
     }
   });
 
-  if (allAddition) {
-    const $pos = state.doc.resolve(from);
-    const reusableMark =
-      $pos.nodeAfter?.marks.find(isAdditionKind) ??
-      $pos.nodeBefore?.marks.find(isAdditionKind);
-    const mark =
-      reusableMark ??
-      markType.create(
-        createCriticChange("addition", undefined, { existingChanges: [] }),
-      );
-    tr.delete(from, to);
-    tr.insert(from, state.schema.text(text, [mark]));
-    tr.setSelection(TextSelection.create(tr.doc, from + text.length));
-  } else {
+  const tr = state.tr;
+
+  for (const seg of [...segments].reverse()) {
+    if (seg.isAddition) {
+      tr.delete(seg.from, seg.to);
+    } else {
+      const isReusableDeletion = (m: ProseMirrorMark) =>
+        m.type === criticMarkType && m.attrs.kind === "deletion";
+      const deletionMark =
+        state.doc
+          .resolve(seg.from)
+          .nodeBefore?.marks.find(isReusableDeletion) ??
+        state.doc.resolve(seg.to).nodeAfter?.marks.find(isReusableDeletion) ??
+        criticMarkType.create(
+          createCriticChange("deletion", undefined, { existingChanges: [] }),
+        );
+      tr.addMark(seg.from, seg.to, deletionMark);
+    }
+  }
+
+  const mappedPos = tr.mapping.map(from, -1);
+  tr.setSelection(TextSelection.create(tr.doc, mappedPos));
+  tr.scrollIntoView();
+  editor.view.dispatch(tr);
+}
+
+/**
+ * Helper: simulate Ctrl+Delete (word-delete forward) in suggesting mode.
+ */
+function suggestingCtrlDelete(editor: Editor) {
+  const { state } = editor.view;
+  const { selection } = state;
+  const criticMarkType = state.schema.marks.criticChange;
+
+  const from = selection.from;
+  const $pos = state.doc.resolve(selection.to);
+  const blockEnd = $pos.end($pos.depth);
+
+  const textAfter = state.doc.textBetween(selection.to, blockEnd);
+  const match = textAfter.match(/^\s*\S+/);
+  const to = match
+    ? selection.to + match[0].length
+    : Math.min(blockEnd, selection.to + 1);
+
+  if (from === to) return;
+
+  const isAdditionKind = (m: ProseMirrorMark) =>
+    m.type === criticMarkType &&
+    (m.attrs.kind === "addition" || m.attrs.kind === "substitution-new");
+
+  type Segment = { from: number; to: number; isAddition: boolean };
+  const segments: Segment[] = [];
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) return;
+    const segFrom = Math.max(pos, from);
+    const segTo = Math.min(pos + node.nodeSize, to);
+    if (segFrom >= segTo) return;
+    const isAdd = node.marks.some(isAdditionKind);
+    const prev = segments[segments.length - 1];
+    if (prev && prev.isAddition === isAdd && prev.to === segFrom) {
+      prev.to = segTo;
+    } else {
+      segments.push({ from: segFrom, to: segTo, isAddition: isAdd });
+    }
+  });
+
+  const tr = state.tr;
+
+  for (const seg of [...segments].reverse()) {
+    if (seg.isAddition) {
+      tr.delete(seg.from, seg.to);
+    } else {
+      const isReusableDeletion = (m: ProseMirrorMark) =>
+        m.type === criticMarkType && m.attrs.kind === "deletion";
+      const deletionMark =
+        state.doc
+          .resolve(seg.from)
+          .nodeBefore?.marks.find(isReusableDeletion) ??
+        state.doc.resolve(seg.to).nodeAfter?.marks.find(isReusableDeletion) ??
+        criticMarkType.create(
+          createCriticChange("deletion", undefined, { existingChanges: [] }),
+        );
+      tr.addMark(seg.from, seg.to, deletionMark);
+    }
+  }
+
+  const mappedPos = tr.mapping.map(to, -1);
+  tr.setSelection(TextSelection.create(tr.doc, mappedPos));
+  tr.scrollIntoView();
+  editor.view.dispatch(tr);
+}
+
+/**
+ * Helper: simulate Cut (Ctrl+X) in suggesting mode.
+ *
+ * Mirrors the handleKeyDown logic from PageCard.tsx for cut.
+ * Addition/substitution-new text is truly deleted; original text gets
+ * a deletion mark.
+ */
+function suggestingCut(editor: Editor) {
+  const { state } = editor.view;
+  const { selection } = state;
+  if (selection.empty) return;
+
+  const criticMarkType = state.schema.marks.criticChange;
+  const from = selection.from;
+  const to = selection.to;
+
+  const isAdditionKind = (m: ProseMirrorMark) =>
+    m.type === criticMarkType &&
+    (m.attrs.kind === "addition" || m.attrs.kind === "substitution-new");
+
+  type Segment = { from: number; to: number; isAddition: boolean };
+  const segments: Segment[] = [];
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) return;
+    const segFrom = Math.max(pos, from);
+    const segTo = Math.min(pos + node.nodeSize, to);
+    if (segFrom >= segTo) return;
+    const isAdd = node.marks.some(isAdditionKind);
+    const prev = segments[segments.length - 1];
+    if (prev && prev.isAddition === isAdd && prev.to === segFrom) {
+      prev.to = segTo;
+    } else {
+      segments.push({ from: segFrom, to: segTo, isAddition: isAdd });
+    }
+  });
+
+  const tr = state.tr;
+  for (const seg of [...segments].reverse()) {
+    if (seg.isAddition) {
+      tr.delete(seg.from, seg.to);
+    } else {
+      const isReusableDeletion = (m: ProseMirrorMark) =>
+        m.type === criticMarkType && m.attrs.kind === "deletion";
+      const deletionMark =
+        state.doc
+          .resolve(seg.from)
+          .nodeBefore?.marks.find(isReusableDeletion) ??
+        state.doc.resolve(seg.to).nodeAfter?.marks.find(isReusableDeletion) ??
+        criticMarkType.create(
+          createCriticChange("deletion", undefined, { existingChanges: [] }),
+        );
+      tr.addMark(seg.from, seg.to, deletionMark);
+    }
+  }
+  editor.view.dispatch(tr.scrollIntoView());
+}
+
+/**
+ * Helper: simulate type-with-selection in suggesting mode.
+ *
+ * Mirrors the handleTextInput logic from PageCard.tsx when from !== to.
+ * Addition/substitution-new text is truly deleted; original text gets
+ * substitution-old mark.
+ */
+function suggestingTypeWithSelection(editor: Editor, text: string) {
+  const { state } = editor.view;
+  const { selection } = state;
+  const from = selection.from;
+  const to = selection.to;
+  const tr = state.tr;
+  const criticMarkType = state.schema.marks.criticChange;
+
+  const isAdditionKind = (m: ProseMirrorMark) =>
+    m.type === criticMarkType &&
+    (m.attrs.kind === "addition" || m.attrs.kind === "substitution-new");
+
+  type Segment = { from: number; to: number; isAddition: boolean };
+  const segments: Segment[] = [];
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) return;
+    const segFrom = Math.max(pos, from);
+    const segTo = Math.min(pos + node.nodeSize, to);
+    if (segFrom >= segTo) return;
+    const isAdd = node.marks.some(isAdditionKind);
+    const prev = segments[segments.length - 1];
+    if (prev && prev.isAddition === isAdd && prev.to === segFrom) {
+      prev.to = segTo;
+    } else {
+      segments.push({ from: segFrom, to: segTo, isAddition: isAdd });
+    }
+  });
+
+  const hasOriginalText = segments.some((s) => !s.isAddition);
+
+  if (hasOriginalText) {
     const oldChange = createCriticChange("substitution-old", undefined, {
       existingChanges: [],
     });
-    const newMark = markType.create({ ...oldChange, kind: "substitution-new" });
-    tr.addMark(from, to, markType.create(oldChange));
-    tr.insert(to, state.schema.text(text, [newMark]));
-    tr.setSelection(TextSelection.create(tr.doc, to + text.length));
+    const newMark = criticMarkType.create({
+      ...oldChange,
+      kind: "substitution-new",
+    });
+
+    for (const seg of [...segments].reverse()) {
+      if (seg.isAddition) {
+        tr.delete(seg.from, seg.to);
+      } else {
+        tr.addMark(seg.from, seg.to, criticMarkType.create(oldChange));
+      }
+    }
+
+    const insertPos = tr.mapping.map(to, -1);
+    tr.insert(insertPos, state.schema.text(text, [newMark]));
+    tr.setSelection(TextSelection.create(tr.doc, insertPos + text.length));
+  } else {
+    for (const seg of [...segments].reverse()) {
+      tr.delete(seg.from, seg.to);
+    }
+    const insertPos = tr.mapping.map(from, -1);
+
+    const isReusable = (m: ProseMirrorMark) =>
+      m.type === criticMarkType &&
+      (m.attrs.kind === "addition" || m.attrs.kind === "substitution-new");
+    const $pos = state.doc.resolve(from);
+    const reusableMark =
+      $pos.nodeBefore?.marks.find(isReusable) ??
+      $pos.nodeAfter?.marks.find(isReusable) ??
+      null;
+    const mark =
+      reusableMark ??
+      criticMarkType.create(
+        createCriticChange("addition", undefined, { existingChanges: [] }),
+      );
+    tr.insert(insertPos, state.schema.text(text, [mark]));
+    tr.setSelection(TextSelection.create(tr.doc, insertPos + text.length));
   }
 
-  editor.view.dispatch(tr);
+  editor.view.dispatch(tr.scrollIntoView());
+}
+
+function getMarks(editor: Editor): Array<{ text: string; kind: string }> {
+  const marks: Array<{ text: string; kind: string }> = [];
+  editor.state.doc.descendants((node) => {
+    if (!node.isText) return;
+    for (const mark of node.marks) {
+      if (mark.type.name === "criticChange") {
+        marks.push({ text: node.text ?? "", kind: mark.attrs.kind as string });
+      }
+    }
+  });
+  return marks;
 }
 
 describe("suggesting mode type-over inside an insertion", () => {
   it("should replace addition text in-place when typing over a selection that is entirely within an addition", () => {
     const editor = createTestEditor("<p>Hello world</p>");
 
-    // Place cursor after "Hello" (position 6)
     editor.view.dispatch(
       editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 6)),
     );
 
-    // Type " threr" in suggesting mode (deliberate typo)
     for (const char of " threr") {
       suggestingTypeChar(editor, char);
     }
     expect(editor.state.doc.textContent).toBe("Hello threr world");
 
-    // Select "rer" within the addition (positions 10-13)
-    // "Hello threr world"
-    //  12345678901234
-    // Position 1 is start of paragraph. "Hello" is at 1-6, " threr" at 6-12
-    // So "rer" starts at position 9 and ends at 12
     editor.view.dispatch(
       editor.state.tr.setSelection(
         TextSelection.create(editor.state.doc, 9, 12),
       ),
     );
 
-    // Type "ere" to fix the typo — should edit the addition in-place
-    suggestingReplaceRange(editor, "ere");
+    suggestingTypeWithSelection(editor, "ere");
 
-    // The text should now be "Hello there world"
     expect(editor.state.doc.textContent).toBe("Hello there world");
 
-    // There should be ONLY addition marks, no substitution marks
-    let hasSubstitutionMark = false;
-    let hasAdditionMark = false;
-    editor.state.doc.descendants((node) => {
-      if (!node.isText) return;
-      for (const mark of node.marks) {
-        if (mark.type.name !== "criticChange") continue;
-        if (
-          mark.attrs.kind === "substitution-old" ||
-          mark.attrs.kind === "substitution-new"
-        ) {
-          hasSubstitutionMark = true;
-        }
-        if (mark.attrs.kind === "addition") {
-          hasAdditionMark = true;
-        }
-      }
-    });
-
-    expect(hasSubstitutionMark).toBe(false);
-    expect(hasAdditionMark).toBe(true);
+    const marks = getMarks(editor);
+    expect(
+      marks.some(
+        (mark) =>
+          mark.kind === "substitution-old" || mark.kind === "substitution-new",
+      ),
+    ).toBe(false);
+    expect(marks.some((mark) => mark.kind === "addition")).toBe(true);
 
     editor.destroy();
   });
 
-  it("should still create a substitution when typing over original (non-addition) text", () => {
+  it("should still create a substitution when typing over original text", () => {
     const editor = createTestEditor("<p>Hello world</p>");
 
-    // Select "world" (positions 7-12)
     editor.view.dispatch(
       editor.state.tr.setSelection(
         TextSelection.create(editor.state.doc, 7, 12),
       ),
     );
 
-    // Type "planet" over the selection — should create a substitution
-    suggestingReplaceRange(editor, "planet");
+    suggestingTypeWithSelection(editor, "planet");
 
-    // Text should include both old and new
     expect(editor.state.doc.textContent).toBe("Hello worldplanet");
 
-    let hasSubstitutionOld = false;
-    let hasSubstitutionNew = false;
-    editor.state.doc.descendants((node) => {
-      if (!node.isText) return;
-      for (const mark of node.marks) {
-        if (mark.type.name !== "criticChange") continue;
-        if (mark.attrs.kind === "substitution-old") hasSubstitutionOld = true;
-        if (mark.attrs.kind === "substitution-new") hasSubstitutionNew = true;
-      }
-    });
-
-    expect(hasSubstitutionOld).toBe(true);
-    expect(hasSubstitutionNew).toBe(true);
+    const marks = getMarks(editor);
+    expect(marks.some((mark) => mark.kind === "substitution-old")).toBe(true);
+    expect(marks.some((mark) => mark.kind === "substitution-new")).toBe(true);
 
     editor.destroy();
   });
@@ -396,6 +589,166 @@ describe("suggesting mode backspace inside an insertion", () => {
       }
     });
     expect(hasCriticMark).toBe(false);
+
+    editor.destroy();
+  });
+});
+
+describe("Ctrl+Backspace should not cross paragraph boundaries", () => {
+  it("should not mark text from the previous paragraph when Ctrl+Backspace is pressed at the start of a paragraph", () => {
+    const editor = createTestEditor(
+      "<p>First paragraph</p><p>Second paragraph</p>",
+    );
+
+    // Place cursor at the start of "Second paragraph"
+    // Doc structure: <doc><p>First paragraph</p><p>Second paragraph</p></doc>
+    // Position 1: start of first paragraph
+    // Position 16: end of "First paragraph" (15 chars)
+    // Position 17: after first paragraph close
+    // Position 18: start of second paragraph content
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 18)),
+    );
+
+    // Ctrl+Backspace should not reach into the first paragraph
+    suggestingCtrlBackspace(editor);
+
+    // The first paragraph should be untouched — no deletion marks
+    const marks = getMarks(editor);
+    const firstParagraphDeletions = marks.filter(
+      (m) => m.kind === "deletion" && "First paragraph".includes(m.text),
+    );
+    expect(firstParagraphDeletions).toHaveLength(0);
+
+    editor.destroy();
+  });
+});
+
+describe("Ctrl+Delete should not cross paragraph boundaries", () => {
+  it("should not mark text from the next paragraph when Ctrl+Delete is pressed at the end of a paragraph", () => {
+    const editor = createTestEditor(
+      "<p>First paragraph</p><p>Second paragraph</p>",
+    );
+
+    // Place cursor at the end of "First paragraph" (position 16)
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 16)),
+    );
+
+    // Ctrl+Delete should not reach into the second paragraph
+    suggestingCtrlDelete(editor);
+
+    // The second paragraph should be untouched — no deletion marks
+    const marks = getMarks(editor);
+    const secondParagraphDeletions = marks.filter(
+      (m) => m.kind === "deletion" && "Second paragraph".includes(m.text),
+    );
+    expect(secondParagraphDeletions).toHaveLength(0);
+
+    editor.destroy();
+  });
+});
+
+describe("Cut in suggesting mode should delete addition text, not mark it", () => {
+  it("should truly delete addition text when cutting a selection that includes it", () => {
+    const editor = createTestEditor("<p>Hello world</p>");
+
+    // Place cursor at end of "Hello" and type " new" as suggestion
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 6)),
+    );
+    for (const char of " new") {
+      suggestingTypeChar(editor, char);
+    }
+    expect(editor.state.doc.textContent).toBe("Hello new world");
+
+    // Select " new" (positions 6..10 — the addition text)
+    editor.view.dispatch(
+      editor.state.tr.setSelection(
+        TextSelection.create(editor.state.doc, 6, 10),
+      ),
+    );
+
+    // Cut — addition text should be deleted, not marked as deletion
+    suggestingCut(editor);
+
+    // The addition text should be gone
+    expect(editor.state.doc.textContent).toBe("Hello world");
+
+    // No deletion marks should exist (the addition text was never committed)
+    const marks = getMarks(editor);
+    const deletionMarks = marks.filter((m) => m.kind === "deletion");
+    expect(deletionMarks).toHaveLength(0);
+
+    editor.destroy();
+  });
+
+  it("should mark original text as deletion and delete addition text in a mixed selection", () => {
+    const editor = createTestEditor("<p>Hello world</p>");
+
+    // Type " new" after "Hello"
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 6)),
+    );
+    for (const char of " new") {
+      suggestingTypeChar(editor, char);
+    }
+    expect(editor.state.doc.textContent).toBe("Hello new world");
+
+    // Select "o new w" — includes original "o", addition " new", and original " w"
+    // In the doc: "Hello new world"
+    //              ^    ^^^^
+    // Position 5 = "o", positions 6-9 = " new" (addition), position 10 = " ", position 11 = "w"
+    editor.view.dispatch(
+      editor.state.tr.setSelection(
+        TextSelection.create(editor.state.doc, 5, 12),
+      ),
+    );
+
+    suggestingCut(editor);
+
+    // Addition text " new" should be deleted; "o" and " w" should have deletion marks
+    const marks = getMarks(editor);
+    const additionMarks = marks.filter((m) => m.kind === "addition");
+    expect(additionMarks).toHaveLength(0);
+
+    const deletionMarks = marks.filter((m) => m.kind === "deletion");
+    expect(deletionMarks.length).toBeGreaterThan(0);
+
+    editor.destroy();
+  });
+});
+
+describe("Type-with-selection should delete addition text, not mark as substitution-old", () => {
+  it("should delete addition text and insert new addition when typing over a suggestion", () => {
+    const editor = createTestEditor("<p>Hello world</p>");
+
+    // Type " new" after "Hello"
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 6)),
+    );
+    for (const char of " new") {
+      suggestingTypeChar(editor, char);
+    }
+    expect(editor.state.doc.textContent).toBe("Hello new world");
+
+    // Select " new" (the addition text at positions 6-10)
+    editor.view.dispatch(
+      editor.state.tr.setSelection(
+        TextSelection.create(editor.state.doc, 6, 10),
+      ),
+    );
+
+    // Type " replaced" over the selection
+    suggestingTypeWithSelection(editor, " replaced");
+
+    // The addition text should be replaced, not marked as substitution-old
+    const marks = getMarks(editor);
+    const subOldMarks = marks.filter((m) => m.kind === "substitution-old");
+    expect(subOldMarks).toHaveLength(0);
+
+    // The new text should be an addition (or substitution-new if mixed)
+    expect(editor.state.doc.textContent).toContain("replaced");
 
     editor.destroy();
   });

@@ -27,11 +27,22 @@ export interface StoredAsset {
   mimeType: string;
 }
 
+export interface CompleteReviewResult {
+  delivered: boolean;
+}
+
+export interface ReviewWatchStatus {
+  watching: boolean;
+  watcherCount: number;
+}
+
 export interface BackendInfo {
-  kind: "local-files" | "local-storage";
+  kind: "local-files" | "local-storage" | "remote";
   label: string;
   detail: string;
   projectPath?: string;
+  sessionId?: string;
+  originPath?: string;
 }
 
 export interface StorageBackend {
@@ -47,6 +58,8 @@ export interface StorageBackend {
     relativePath: string,
     onChange: (event: MarkdownFileChangeEvent) => void,
   ): () => void;
+  completeReview?(relativePath: string): Promise<CompleteReviewResult>;
+  getReviewWatchStatus?(relativePath: string): Promise<ReviewWatchStatus>;
   saveAsset(file: File): Promise<StoredAsset>;
   resolveFileUrl(path: string): string | null;
   openProject(path: string): Promise<void>;
