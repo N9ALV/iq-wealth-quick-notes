@@ -33,6 +33,7 @@ import {
 } from "./components/ui/dialog";
 import { detectBackend } from "./detect-backend";
 import { DocumentWorkspace } from "./DocumentWorkspace";
+import type { DocumentSaveState } from "./PageCard";
 import { PreviewBackend } from "./preview-backend";
 import { RoughdraftFormatDemo } from "./RoughdraftFormatDemo";
 import {
@@ -43,8 +44,33 @@ import {
 import { fetchUpdateStatus, type UpdateStatus } from "./update-status";
 import { UpdateNotice } from "./UpdateNotice";
 
-type SaveState = "idle" | "saving" | "error";
-type DocumentDiskChangeState = "clean" | "changed" | "conflict" | "paused";
+export type DocumentDiskChangeState =
+  | "clean"
+  | "changed"
+  | "conflict"
+  | "paused";
+
+export function shouldWarnBeforeUnload({
+  activeDocumentPath,
+  isDirty,
+  saveState,
+  diskChangeState,
+}: {
+  activeDocumentPath: string | null;
+  isDirty: boolean;
+  saveState: DocumentSaveState;
+  diskChangeState: DocumentDiskChangeState;
+}) {
+  return (
+    !!activeDocumentPath &&
+    (isDirty ||
+      saveState === "saving" ||
+      saveState === "unsaved" ||
+      saveState === "error" ||
+      diskChangeState !== "clean")
+  );
+}
+
 const AGENT_SETUP_PROMPT =
   "Install Roughdraft for me using `npm i -g roughdraft`, then read https://roughdraft.page/setup.md and set yourself up to use it.";
 const PREVIEW_DOCUMENT_PATH = "preview.md";
@@ -606,7 +632,7 @@ export function PreviewPage() {
   const [editorViewMode, setEditorViewMode] = useState<DocumentEditorViewMode>(
     () => getDocumentEditorViewModeFromLocation("rich-text"),
   );
-  const [, setSaveState] = useState<SaveState>("idle");
+  const [, setSaveState] = useState<DocumentSaveState>("saved");
 
   useEffect(() => () => backend.dispose(), [backend]);
 
@@ -676,7 +702,8 @@ export function App() {
   const [activeDocumentPath, setActiveDocumentPath] = useState<string | null>(
     initialRequestedPathState.documentPath,
   );
-  const [, setDocumentSaveState] = useState<SaveState>("idle");
+  const [documentSaveState, setDocumentSaveState] =
+    useState<DocumentSaveState>("saved");
   const [documentDiskChangeState, setDocumentDiskChangeState] =
     useState<DocumentDiskChangeState>("clean");
   const [documentForceResetKey, setDocumentForceResetKey] = useState<
@@ -692,11 +719,13 @@ export function App() {
   const documentPageRef = useRef<Page | null>(null);
   const activeDocumentPathRef = useRef<string | null>(activeDocumentPath);
   const documentDirtyRef = useRef(false);
+  const documentSaveStateRef = useRef<DocumentSaveState>("saved");
   const documentDraftContentRef = useRef<string | null>(null);
 
   backendRef.current = backend;
   documentPageRef.current = documentPage;
   activeDocumentPathRef.current = activeDocumentPath;
+  documentSaveStateRef.current = documentSaveState;
 
   const applyDocumentPage = useCallback((nextDocument: Page) => {
     setDocumentPage(nextDocument);
@@ -901,9 +930,38 @@ export function App() {
     documentDirtyRef.current = isDirty;
   }, []);
 
+  const handleDocumentSaveStateChange = useCallback(
+    (state: DocumentSaveState) => {
+      documentSaveStateRef.current = state;
+      setDocumentSaveState(state);
+    },
+    [],
+  );
+
   const handleDocumentLocalContentChange = useCallback((markdown: string) => {
     documentDraftContentRef.current = markdown;
   }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (
+        !shouldWarnBeforeUnload({
+          activeDocumentPath: activeDocumentPathRef.current,
+          isDirty: documentDirtyRef.current,
+          saveState: documentSaveStateRef.current,
+          diskChangeState: documentDiskChangeState,
+        })
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [documentDiskChangeState]);
 
   const handleReloadDocumentFromDisk = useCallback(async () => {
     const currentBackend = backendRef.current;
@@ -1101,7 +1159,7 @@ export function App() {
         documentEditorViewMode={documentEditorViewMode}
         onDocumentEditorViewModeChange={handleDocumentEditorViewModeChange}
         onSaveDocument={handleSaveDocument}
-        onDocumentSaveStateChange={setDocumentSaveState}
+        onDocumentSaveStateChange={handleDocumentSaveStateChange}
         onDocumentDirtyStateChange={handleDocumentDirtyStateChange}
         onDocumentLocalContentChange={handleDocumentLocalContentChange}
         documentDiskChangeState={documentDiskChangeState}
