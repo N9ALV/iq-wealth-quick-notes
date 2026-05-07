@@ -637,6 +637,38 @@ describe("PageCard editor integration", () => {
     ).toBeNull();
   });
 
+  it("opens the link edit popover without focusing the URL input when clicking link text", async () => {
+    const rendered = await renderPageCard({
+      page: {
+        id: "doc-link-click-popover-1",
+        title: "Doc Link Click Popover 1",
+        content: "[linked](https://example.com)",
+      },
+      interactionMode: "editing",
+      selected: true,
+    });
+
+    const link = rendered.container.querySelector(
+      'a[href="https://example.com"]',
+    );
+    expect(link).not.toBeNull();
+
+    await act(async () => {
+      link?.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+      );
+    });
+    await flushAnimationFrame();
+
+    const input = rendered.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Link URL"]',
+    );
+
+    expect(input).not.toBeNull();
+    expect(input?.value).toBe("https://example.com");
+    expect(document.activeElement).not.toBe(input);
+  });
+
   it("suggesting mode turns typed text into insertion markup", async () => {
     const rendered = await renderPageCard({
       page: {

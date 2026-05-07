@@ -52,6 +52,7 @@ interface LinkPopoverState {
   left: number;
   top: number;
   existingLink: boolean;
+  focusInput: boolean;
 }
 
 function getNavigatorPlatform() {
@@ -336,22 +337,37 @@ export function EditorContextMenu({
     });
   }, [backend, editor]);
 
-  const openLinkPopover = useCallback(() => {
-    if (!editor || !containerRef.current) return;
+  const openExistingLinkPopover = useCallback(
+    (anchor: HTMLAnchorElement) => {
+      if (!editor) return;
 
-    const anchor = findActiveLinkAnchor(editor, containerRef.current);
+      const firstChild = anchor.firstChild;
+      if (firstChild) {
+        try {
+          const position = editor.view.posAtDOM(firstChild, 0);
+          editor.commands.setTextSelection(
+            anchor.textContent ? position + 1 : position,
+          );
+        } catch {
+          // Fall back to the current editor selection if the DOM mapping changed.
+        }
+      }
 
-    if (anchor) {
       const rect = anchor.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+
+      const linkAttrs = editor.isActive("link")
+        ? editor.getAttributes("link")
+        : {};
       const rawHref =
-        (editor.getAttributes("link").dataMarkdownSrc as string | null) ||
+        (linkAttrs.dataMarkdownSrc as string | null) ||
         anchor.getAttribute("data-markdown-src") ||
         anchor.getAttribute("href") ||
         "";
       const href = resolveEditableLinkTarget(
         rawHref,
         backend,
-        (editor.getAttributes("link").href as string | null) || anchor.href,
+        (linkAttrs.href as string | null) || anchor.href,
       );
 
       setLinkPopoverState({
@@ -360,7 +376,19 @@ export function EditorContextMenu({
         left: rect.left + rect.width / 2,
         top: rect.top - 12,
         existingLink: true,
+        focusInput: false,
       });
+    },
+    [backend, editor],
+  );
+
+  const openLinkPopover = useCallback(() => {
+    if (!editor || !containerRef.current) return;
+
+    const anchor = findActiveLinkAnchor(editor, containerRef.current);
+
+    if (anchor) {
+      openExistingLinkPopover(anchor);
       return;
     }
 
@@ -379,8 +407,9 @@ export function EditorContextMenu({
       left: rect.left + rect.width / 2,
       top: rect.top - 12,
       existingLink: false,
+      focusInput: true,
     });
-  }, [backend, editor]);
+  }, [backend, editor, openExistingLinkPopover]);
 
   const applyLink = useCallback(
     (nextValue: string) => {
@@ -512,7 +541,9 @@ export function EditorContextMenu({
   }, [linkPopoverState]);
 
   useEffect(() => {
-    if (!linkPopoverState || !linkInputRef.current) return;
+    if (!linkPopoverState?.focusInput || !linkInputRef.current) {
+      return;
+    }
 
     requestAnimationFrame(() => {
       linkInputRef.current?.focus();
@@ -558,6 +589,23 @@ export function EditorContextMenu({
     <div
       ref={containerRef}
       className="relative"
+      onMouseDownCapture={(event) => {
+        if (!editor || !containerRef.current) return;
+
+        const target = event.target as Node;
+        const candidate = getElementFromDomNode(target);
+        const anchor = candidate?.closest("a[href]");
+
+        if (
+          !(anchor instanceof HTMLAnchorElement) ||
+          !containerRef.current.contains(anchor)
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        openExistingLinkPopover(anchor);
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
