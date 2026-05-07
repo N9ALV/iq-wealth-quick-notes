@@ -320,7 +320,7 @@ describe("saving/saved status indicator (issue 2 fix)", () => {
     expect(container.textContent).toContain(label);
   });
 
-  it("renders save status inside the handoff button when handoff exists", async () => {
+  it("renders save status below the handoff button when handoff exists", async () => {
     await renderWorkspace({ watcherCount: 1 });
 
     const stack = container.querySelector(
@@ -332,12 +332,8 @@ describe("saving/saved status indicator (issue 2 fix)", () => {
     expect(stack).not.toBeNull();
     expect(doneReviewingButton).toBeDefined();
     expect(doneReviewingButton?.textContent).toContain("I'm done");
-    expect(doneReviewingButton?.textContent).toContain("Saved");
-    expect(
-      doneReviewingButton?.querySelector(
-        '[data-document-save-status-inline="true"]',
-      ),
-    ).not.toBeNull();
+    expect(doneReviewingButton?.textContent).not.toContain("Saved");
+    expect(stack?.textContent).toContain("Saved");
   });
 
   it("renders standalone save status in the top-right stack without handoff", async () => {
@@ -349,9 +345,6 @@ describe("saving/saved status indicator (issue 2 fix)", () => {
     expect(stack).not.toBeNull();
     expect(stack?.textContent).not.toContain("I'm done");
     expect(stack?.textContent).toContain("Saved");
-    expect(
-      stack?.querySelector('[data-document-save-status-inline="true"]'),
-    ).toBeNull();
   });
 
   it.each([
