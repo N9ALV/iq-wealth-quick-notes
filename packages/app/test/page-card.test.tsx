@@ -2,7 +2,11 @@ import { act } from "react";
 import type { Editor } from "@tiptap/react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PageCard, shouldDismissCommentThread } from "../src/PageCard";
+import {
+  PageCard,
+  shouldDismissCommentThread,
+  type DocumentSaveController,
+} from "../src/PageCard";
 import type { Page, StorageBackend } from "../src/storage";
 
 function createDomRect({
@@ -258,6 +262,7 @@ type RenderedPageCard = {
   onSave: ReturnType<typeof vi.fn>;
   onSaveStateChange: ReturnType<typeof vi.fn>;
   getEditor: () => Editor;
+  getSaveController: () => DocumentSaveController;
   rerender: (overrides?: PageCardTestOptions) => Promise<void>;
   unmount: () => Promise<void>;
 };
@@ -274,6 +279,7 @@ async function renderPageCard(
   const onSave = vi.fn().mockResolvedValue(undefined);
   const onSaveStateChange = vi.fn();
   let editor: Editor | null = null;
+  let saveController: DocumentSaveController | null = null;
 
   let props = {
     page: options.page ?? {
@@ -290,6 +296,9 @@ async function renderPageCard(
     backend,
     onEditorReady: (nextEditor: Editor | null) => {
       editor = nextEditor;
+    },
+    onSaveControllerChange: (controller: DocumentSaveController | null) => {
+      saveController = controller;
     },
   } as const;
 
@@ -321,6 +330,10 @@ async function renderPageCard(
     getEditor() {
       expect(editor).not.toBeNull();
       return editor as Editor;
+    },
+    getSaveController() {
+      expect(saveController).not.toBeNull();
+      return saveController as DocumentSaveController;
     },
     async rerender(overrides = {}) {
       props = {
@@ -467,7 +480,43 @@ describe("PageCard editor integration", () => {
       "doc-1",
       expect.stringContaining("Start now"),
     );
-    expect(rendered.onSaveStateChange.mock.calls.at(-1)?.[0]).toBe("idle");
+    expect(rendered.onSaveStateChange.mock.calls.at(-1)?.[0]).toBe("saved");
+  });
+
+  it("manual save flushes pending rich-text autosave immediately", async () => {
+    const rendered = await renderPageCard({
+      page: {
+        id: "doc-manual-save-rich-1",
+        title: "Manual Save Rich",
+        content: "Start",
+      },
+      selected: true,
+    });
+
+    vi.useFakeTimers();
+
+    await insertTextAtEnd(rendered.getEditor(), " now");
+
+    expect(rendered.onSaveStateChange.mock.calls.at(-1)?.[0]).toBe("saving");
+    expect(rendered.onSave).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await rendered.getSaveController().flushSave();
+    });
+
+    expect(rendered.onSave).toHaveBeenCalledTimes(1);
+    expect(rendered.onSave).toHaveBeenCalledWith(
+      "doc-manual-save-rich-1",
+      expect.stringContaining("Start now"),
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+
+    expect(rendered.onSave).toHaveBeenCalledTimes(1);
+    expect(rendered.onSaveStateChange.mock.calls.at(-1)?.[0]).toBe("saved");
   });
 
   it("rich-text edits preserve raw YAML frontmatter on autosave", async () => {
