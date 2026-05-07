@@ -24,6 +24,8 @@ This also answers the user's confusion about "Medium strategy": the testing stra
 
 Do not add a new approval gate unless the user asks to revise the plan first. The user already asked to run trycycle in the current checkout, and this plan is the execution source of truth.
 
+Handoff expectation for the executor: if the user asks where the work is being planned or reviewed, name the plan file directly instead of summarizing an unseen "Medium strategy." The user's immediate confusion was about process visibility, so the implementation handoff should keep the Markdown plan path visible.
+
 ## Relevant existing context
 
 - `docs/adr/0001-single-local-markdown-file.md` says Roughdraft's unit of work is one Markdown file. The storyboard should show `homepage-conversion-plan.md`, not projects, vaults, or multi-file workspaces.
@@ -293,12 +295,11 @@ import {
   FileText,
   MessageSquare,
   MousePointerClick,
-  PencilLine,
   Sparkles,
 } from "lucide-react";
 ```
 
-Remove any icon imports that become unused after deleting `HOMEPAGE_WORKFLOWS`.
+Remove any icon imports that become unused after deleting `HOMEPAGE_WORKFLOWS`. In the current file, `PencilLine` should be removed because it is only used by the old two-card workflow data.
 
 **Step 2: Replace `HOMEPAGE_WORKFLOWS` with storyboard data**
 
