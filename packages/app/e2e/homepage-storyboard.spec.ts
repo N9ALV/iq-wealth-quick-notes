@@ -106,6 +106,36 @@ test.describe("homepage workflow storyboard", () => {
         "homepage-workflow-document-shell-no-comments",
       ),
     ).toBeVisible();
+    const previewLayout = await storyboard.evaluate((element) => {
+      const terminal = element.querySelector(
+        '[data-testid="homepage-workflow-terminal"]',
+      );
+      const popup = element.querySelector(
+        '[data-testid="homepage-workflow-popup"]',
+      );
+      const scaledDocument = element.querySelector(
+        '[data-testid="homepage-workflow-document-scale"]',
+      );
+      if (!terminal || !popup || !scaledDocument) {
+        throw new Error("Expected terminal, popup, and scaled document");
+      }
+
+      const transform = window.getComputedStyle(scaledDocument).transform;
+      const matrix =
+        transform === "none"
+          ? new DOMMatrixReadOnly()
+          : new DOMMatrixReadOnly(transform);
+
+      return {
+        documentScale: matrix.a,
+        popupWidth: popup.getBoundingClientRect().width,
+        terminalWidth: terminal.getBoundingClientRect().width,
+      };
+    });
+    expect(previewLayout.popupWidth).toBeGreaterThan(
+      previewLayout.terminalWidth,
+    );
+    expect(previewLayout.documentScale).toBeCloseTo(0.6, 2);
     await expect(
       roughdraftPopup.getByTestId("homepage-workflow-review-comment"),
     ).toHaveCount(0);
@@ -127,6 +157,34 @@ test.describe("homepage workflow storyboard", () => {
     await expect(
       roughdraftPopup.getByTestId("homepage-workflow-review-comment"),
     ).toBeVisible();
+    const commentsLayout = await storyboard.evaluate((element) => {
+      const popup = element.querySelector(
+        '[data-testid="homepage-workflow-popup"]',
+      );
+      const shell = element.querySelector(
+        '[data-testid="homepage-workflow-document-shell-with-comments"]',
+      );
+      if (!popup || !shell) {
+        throw new Error("Expected popup and comments shell");
+      }
+
+      return {
+        bodyScrollWidth: document.body.scrollWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        popupWidth: popup.getBoundingClientRect().width,
+        shellWidth: shell.getBoundingClientRect().width,
+        viewportWidth: window.innerWidth,
+      };
+    });
+    expect(commentsLayout.bodyScrollWidth).toBeLessThanOrEqual(
+      commentsLayout.viewportWidth,
+    );
+    expect(commentsLayout.documentScrollWidth).toBeLessThanOrEqual(
+      commentsLayout.viewportWidth,
+    );
+    expect(commentsLayout.shellWidth).toBeLessThan(
+      commentsLayout.popupWidth * 0.85,
+    );
 
     await scenes.nth(4).evaluate((element) => {
       window.scrollTo({
@@ -198,6 +256,8 @@ test.describe("homepage workflow storyboard", () => {
     });
 
     logE2eEvent("homepage.workflow-storyboard.desktop", {
+      commentsLayout,
+      previewLayout,
       sceneLayout,
       stickyLayout,
       storyboardTop,
@@ -205,7 +265,9 @@ test.describe("homepage workflow storyboard", () => {
     });
   });
 
-  test("does not create horizontal overflow on mobile", async ({ page }) => {
+  test("docks the storyboard visual without mobile overlap", async ({
+    page,
+  }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");
 
@@ -225,6 +287,169 @@ test.describe("homepage workflow storyboard", () => {
     expect(mobileSceneTexts[3]).toContain("Leave comments and suggestions");
     expect(mobileSceneTexts[4]).toContain("Click I'm done");
     expect(mobileSceneTexts[5]).toContain("The agent resumes");
+
+    const stickyVisual = storyboard.getByTestId(
+      "homepage-workflow-sticky-visual",
+    );
+    await expect(stickyVisual).toBeVisible();
+    const scenes = storyboard.getByTestId("homepage-workflow-scene");
+
+    await storyboard.evaluate((element) => {
+      window.scrollTo({
+        top: element.getBoundingClientRect().top + window.scrollY,
+      });
+    });
+
+    const layoutAtStart = await storyboard.evaluate((element) => {
+      const sticky = element.querySelector(
+        '[data-testid="homepage-workflow-sticky-visual"]',
+      );
+      const sceneList = element.querySelector(
+        '[data-testid="homepage-workflow-scene-list"]',
+      );
+      const popup = element.querySelector(
+        '[data-testid="homepage-workflow-popup"]',
+      );
+      if (!sticky || !sceneList || !popup) {
+        throw new Error("Expected sticky visual, scene list, and popup");
+      }
+
+      const stickyRect = sticky.getBoundingClientRect();
+      const popupRect = popup.getBoundingClientRect();
+      const stickyStyles = window.getComputedStyle(sticky);
+      const sceneListStyles = window.getComputedStyle(sceneList);
+      const popupStyles = window.getComputedStyle(popup);
+
+      return {
+        bodyScrollWidth: document.body.scrollWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        popupLeft: popupRect.left,
+        popupRight: popupRect.right,
+        popupOverhang: popupStyles.getPropertyValue(
+          "--homepage-workflow-popup-overhang",
+        ),
+        position: stickyStyles.position,
+        sceneListPaddingBottom: Number.parseFloat(
+          sceneListStyles.paddingBottom,
+        ),
+        stickyBottomGap: window.innerHeight - stickyRect.bottom,
+        stickyHeight: stickyRect.height,
+        stickyTop: stickyRect.top,
+        storyboardClientWidth: element.clientWidth,
+        storyboardScrollWidth: element.scrollWidth,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
+      };
+    });
+
+    expect(layoutAtStart.position).toBe("sticky");
+    expect(layoutAtStart.stickyBottomGap).toBeGreaterThanOrEqual(8);
+    expect(layoutAtStart.stickyBottomGap).toBeLessThan(40);
+    expect(layoutAtStart.stickyHeight).toBeGreaterThan(200);
+    expect(layoutAtStart.sceneListPaddingBottom).toBeGreaterThan(
+      layoutAtStart.stickyHeight,
+    );
+    expect(layoutAtStart.popupOverhang.trim()).toBe("0rem");
+    expect(layoutAtStart.popupLeft).toBeGreaterThanOrEqual(0);
+    expect(layoutAtStart.popupRight).toBeLessThanOrEqual(
+      layoutAtStart.viewportWidth,
+    );
+
+    const stageLayouts: Array<{
+      copyBottom: number;
+      copyTop: number;
+      documentTitleBottom: number | null;
+      documentTitleTop: number | null;
+      stage: number;
+      stickyBottom: number;
+      stickyTop: number;
+      viewportHeight: number;
+    }> = [];
+    for (const index of [1, 2, 3, 4, 5]) {
+      const targetStage = String(index + 1);
+      await scenes.nth(index).evaluate((element) => {
+        const sticky = document.querySelector(
+          '[data-testid="homepage-workflow-sticky-visual"]',
+        );
+        if (!sticky) {
+          throw new Error("Expected sticky visual");
+        }
+
+        const stickyRect = sticky.getBoundingClientRect();
+        const activationLine = Math.max(
+          0,
+          Math.ceil(
+            stickyRect.top -
+              Math.min(stickyRect.height + 32, window.innerHeight * 0.35),
+          ),
+        );
+        window.scrollTo({
+          top:
+            element.getBoundingClientRect().top +
+            window.scrollY -
+            activationLine,
+        });
+      });
+
+      await expect(
+        storyboard.getByTestId("homepage-workflow-terminal"),
+      ).toHaveAttribute("data-homepage-workflow-terminal-stage", targetStage);
+
+      stageLayouts.push(
+        await scenes.nth(index).evaluate((element, stage) => {
+          const sticky = document.querySelector(
+            '[data-testid="homepage-workflow-sticky-visual"]',
+          );
+          const sceneCopy = element.querySelector(
+            ".homepage-workflow-scene-copy",
+          );
+          const documentTitle = document.querySelector(
+            '[data-testid="homepage-workflow-document-title"]',
+          );
+          if (!sticky || !sceneCopy || !documentTitle) {
+            throw new Error(
+              "Expected sticky visual, scene copy, and document title",
+            );
+          }
+
+          const stickyRect = sticky.getBoundingClientRect();
+          const copyRect = sceneCopy.getBoundingClientRect();
+          const titleRect = documentTitle.getBoundingClientRect();
+          return {
+            copyBottom: copyRect.bottom,
+            copyTop: copyRect.top,
+            documentTitleBottom: stage >= 3 ? titleRect.bottom : null,
+            documentTitleTop: stage >= 3 ? titleRect.top : null,
+            stage,
+            stickyBottom: stickyRect.bottom,
+            stickyTop: stickyRect.top,
+            viewportHeight: window.innerHeight,
+          };
+        }, index + 1),
+      );
+    }
+
+    for (const stageLayout of stageLayouts) {
+      expect(stageLayout.copyTop).toBeGreaterThanOrEqual(0);
+      expect(stageLayout.copyBottom).toBeLessThanOrEqual(
+        stageLayout.stickyTop - 8,
+      );
+      expect(stageLayout.stickyBottom).toBeLessThanOrEqual(
+        stageLayout.viewportHeight,
+      );
+      if (
+        stageLayout.stage >= 3 &&
+        stageLayout.documentTitleTop !== null &&
+        stageLayout.documentTitleBottom !== null
+      ) {
+        expect(stageLayout.documentTitleTop).toBeGreaterThanOrEqual(
+          stageLayout.stickyTop + 8,
+        );
+        expect(stageLayout.documentTitleBottom).toBeLessThanOrEqual(
+          stageLayout.stickyBottom - 8,
+        );
+      }
+    }
 
     const dimensions = await page.evaluate(() => ({
       bodyScrollWidth: document.body.scrollWidth,
@@ -248,6 +473,15 @@ test.describe("homepage workflow storyboard", () => {
       dimensions.storyboardClientWidth,
     );
 
-    logE2eEvent("homepage.workflow-storyboard.mobile-overflow", dimensions);
+    await testInfo.attach("homepage-workflow-storyboard-mobile", {
+      body: await storyboard.screenshot(),
+      contentType: "image/png",
+    });
+
+    logE2eEvent("homepage.workflow-storyboard.mobile-sticky", {
+      dimensions,
+      layoutAtStart,
+      stageLayouts,
+    });
   });
 });

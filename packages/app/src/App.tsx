@@ -231,6 +231,7 @@ export function Homepage({
     "idle",
   );
   const workflowStepRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const workflowStickyVisualRef = useRef<HTMLDivElement | null>(null);
   const [homepageWorkflowStage, setHomepageWorkflowStage] = useState(1);
 
   const handleCopySetupPrompt = useCallback(async () => {
@@ -249,13 +250,26 @@ export function Homepage({
         document.documentElement.scrollHeight > window.innerHeight + 1;
       if (!pageCanScroll) return;
 
+      const stickyVisualRect =
+        workflowStickyVisualRef.current?.getBoundingClientRect();
+      const isMobileStoryboard =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(max-width: 899px)").matches;
+      const mobileReadableOffset = stickyVisualRect
+        ? Math.min(stickyVisualRect.height + 32, window.innerHeight * 0.35)
+        : 0;
+      const activationLine =
+        isMobileStoryboard && stickyVisualRect
+          ? Math.max(0, Math.ceil(stickyVisualRect.top - mobileReadableOffset))
+          : 0;
+
       let nextStage = 1;
       for (const [step, element] of Object.entries(workflowStepRefs.current)) {
         if (!element) continue;
 
         const stepNumber = Number(step);
         if (
-          element.getBoundingClientRect().top <= 0 &&
+          element.getBoundingClientRect().top <= activationLine &&
           stepNumber > nextStage
         ) {
           nextStage = stepNumber;
@@ -418,6 +432,7 @@ export function Homepage({
               className="homepage-workflow-sticky-visual"
               data-homepage-workflow-sticky-visual=""
               data-testid="homepage-workflow-sticky-visual"
+              ref={workflowStickyVisualRef}
             >
               <HomepageWorkflowComposite
                 workflowStage={homepageWorkflowStage}
@@ -621,124 +636,130 @@ function RoughdraftPopupMock({ workflowStage }: { workflowStage: number }) {
         }
         data-testid="homepage-workflow-document-workspace"
       >
-        {showDoneButton ? (
-          <Button
-            className="homepage-workflow-handoff-button"
-            data-testid="homepage-workflow-handoff-button"
-            type="button"
-            size="sm"
-          >
-            <Check className="size-4" aria-hidden="true" />
-            I'm done
-          </Button>
-        ) : null}
         <div
-          className={`homepage-workflow-document-shell ${
-            showReviewMarkup
-              ? "homepage-workflow-document-shell-with-comments"
-              : "homepage-workflow-document-shell-no-comments"
-          }`}
-          data-testid={
-            showReviewMarkup
-              ? "homepage-workflow-document-shell-with-comments"
-              : "homepage-workflow-document-shell-no-comments"
-          }
+          className="homepage-workflow-document-scale"
+          data-testid="homepage-workflow-document-scale"
         >
-          <div className="homepage-workflow-document-main">
-            <div className="homepage-workflow-document-toolbar">
-              <button
-                aria-label="Switch editor view"
-                className="homepage-workflow-view-toggle"
-                type="button"
-              >
-                <span className="homepage-workflow-view-toggle-active">
-                  <Eye className="size-3" aria-hidden="true" />
-                </span>
-                <span>
-                  <CodeXml className="size-3" aria-hidden="true" />
-                </span>
-              </button>
-              <span className="homepage-workflow-document-filename">
-                homepage-conversion-plan.md
-              </span>
-              <span className="homepage-workflow-document-mode">
-                <PencilLine className="size-3" aria-hidden="true" />
-                editing
-              </span>
-            </div>
-            <div className="homepage-workflow-document-page">
-              <p className="homepage-workflow-doc-kicker">Roughdraft</p>
-              <h3 data-testid="homepage-workflow-document-title">
-                Homepage Conversion Plan
-              </h3>
-              <p>
-                Move the workflow story above{" "}
-                {showReviewMarkup ? (
-                  <span
-                    className="homepage-workflow-comment-highlight"
-                    data-testid="homepage-workflow-comment-highlight"
-                  >
-                    "It's just Markdown."
-                  </span>
-                ) : (
-                  '"It\'s just Markdown."'
-                )}
-              </p>
-              <p>
-                Show the agent pause, the review window, and the resume signal.
-              </p>
-              <p>
-                Keep the format section as proof that the review data is
-                portable Markdown.
-              </p>
-              {showReviewMarkup ? (
-                <p>
-                  <span
-                    className="homepage-workflow-suggestion-old"
-                    data-testid="homepage-workflow-suggestion-old"
-                  >
-                    Review an agent's plan
-                  </span>{" "}
-                  <span
-                    className="homepage-workflow-suggestion-new"
-                    data-testid="homepage-workflow-suggestion-new"
-                  >
-                    Review a homepage plan
-                  </span>{" "}
-                  before it starts coding.
-                </p>
-              ) : (
-                <p>Review an agent's plan before it starts coding.</p>
-              )}
-            </div>
-          </div>
-          {showReviewMarkup ? (
-            <div
-              className="homepage-workflow-review-rail"
-              data-testid="homepage-workflow-review-rail"
+          {showDoneButton ? (
+            <Button
+              className="homepage-workflow-handoff-button"
+              data-testid="homepage-workflow-handoff-button"
+              type="button"
+              size="sm"
             >
-              <div className="homepage-workflow-review-thread">
-                <div className="homepage-workflow-review-avatar">N</div>
-                <div>
-                  <div className="homepage-workflow-review-author">Nora</div>
-                  <p data-testid="homepage-workflow-review-comment">
-                    This should go above "It's just Markdown."
-                  </p>
-                </div>
+              <Check className="size-4" aria-hidden="true" />
+              I'm done
+            </Button>
+          ) : null}
+          <div
+            className={`homepage-workflow-document-shell ${
+              showReviewMarkup
+                ? "homepage-workflow-document-shell-with-comments"
+                : "homepage-workflow-document-shell-no-comments"
+            }`}
+            data-testid={
+              showReviewMarkup
+                ? "homepage-workflow-document-shell-with-comments"
+                : "homepage-workflow-document-shell-no-comments"
+            }
+          >
+            <div className="homepage-workflow-document-main">
+              <div className="homepage-workflow-document-toolbar">
+                <button
+                  aria-label="Switch editor view"
+                  className="homepage-workflow-view-toggle"
+                  type="button"
+                >
+                  <span className="homepage-workflow-view-toggle-active">
+                    <Eye className="size-3" aria-hidden="true" />
+                  </span>
+                  <span>
+                    <CodeXml className="size-3" aria-hidden="true" />
+                  </span>
+                </button>
+                <span className="homepage-workflow-document-filename">
+                  homepage-conversion-plan.md
+                </span>
+                <span className="homepage-workflow-document-mode">
+                  <PencilLine className="size-3" aria-hidden="true" />
+                  editing
+                </span>
               </div>
-              <div className="homepage-workflow-review-thread homepage-workflow-review-thread-ai">
-                <div className="homepage-workflow-review-avatar">AI</div>
-                <div>
-                  <div className="homepage-workflow-review-author">AI</div>
-                  <p>Replace: "agent's plan" with "homepage plan"</p>
-                  <div className="homepage-workflow-review-actions">
-                    <Check className="size-3.5" aria-hidden="true" />
-                    <span aria-hidden="true">×</span>
+              <div className="homepage-workflow-document-page">
+                <p className="homepage-workflow-doc-kicker">Roughdraft</p>
+                <h3 data-testid="homepage-workflow-document-title">
+                  Homepage Conversion Plan
+                </h3>
+                <p>
+                  Move the workflow story above{" "}
+                  {showReviewMarkup ? (
+                    <span
+                      className="homepage-workflow-comment-highlight"
+                      data-testid="homepage-workflow-comment-highlight"
+                    >
+                      "It's just Markdown."
+                    </span>
+                  ) : (
+                    '"It\'s just Markdown."'
+                  )}
+                </p>
+                <p>
+                  Show the agent pause, the review window, and the resume
+                  signal.
+                </p>
+                <p>
+                  Keep the format section as proof that the review data is
+                  portable Markdown.
+                </p>
+                {showReviewMarkup ? (
+                  <p>
+                    <span
+                      className="homepage-workflow-suggestion-old"
+                      data-testid="homepage-workflow-suggestion-old"
+                    >
+                      Review an agent's plan
+                    </span>{" "}
+                    <span
+                      className="homepage-workflow-suggestion-new"
+                      data-testid="homepage-workflow-suggestion-new"
+                    >
+                      Review a homepage plan
+                    </span>{" "}
+                    before it starts coding.
+                  </p>
+                ) : (
+                  <p>Review an agent's plan before it starts coding.</p>
+                )}
+              </div>
+            </div>
+            {showReviewMarkup ? (
+              <div
+                className="homepage-workflow-review-rail"
+                data-testid="homepage-workflow-review-rail"
+              >
+                <div className="homepage-workflow-review-thread">
+                  <div className="homepage-workflow-review-avatar">N</div>
+                  <div>
+                    <div className="homepage-workflow-review-author">Nora</div>
+                    <p data-testid="homepage-workflow-review-comment">
+                      This should go above "It's just Markdown."
+                    </p>
+                  </div>
+                </div>
+                <div className="homepage-workflow-review-thread homepage-workflow-review-thread-ai">
+                  <div className="homepage-workflow-review-avatar">AI</div>
+                  <div>
+                    <div className="homepage-workflow-review-author">AI</div>
+                    <p>Replace: "agent's plan" with "homepage plan"</p>
+                    <div className="homepage-workflow-review-actions">
+                      <Check className="size-3.5" aria-hidden="true" />
+                      <span aria-hidden="true">×</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

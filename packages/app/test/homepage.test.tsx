@@ -277,7 +277,7 @@ describe("Homepage", () => {
     expect(document.body.textContent).toContain("Copied");
   });
 
-  it("explains the plan-review workflow with scrolling steps and a fixed visual", async () => {
+  it("explains the plan-review workflow with scrolling steps and a sticky visual", async () => {
     await renderHomepage(root);
 
     const text = container.textContent ?? "";
@@ -355,6 +355,18 @@ describe("Homepage", () => {
     ).toBe("true");
     expect(APP_STYLES).toMatch(
       /\.homepage-workflow-sticky-visual \{[^}]*position:\s*sticky;[^}]*top:\s*2rem;/s,
+    );
+    expect(APP_STYLES).toMatch(
+      /@media \(max-width:\s*899px\) \{[\s\S]*\.homepage-workflow-sticky-visual \{[^}]*position:\s*sticky;[^}]*top:\s*calc\([^}]*100svh[^}]*var\(--homepage-workflow-dock-height\)[^}]*var\(--homepage-workflow-dock-bottom\)[^}]*\);[^}]*bottom:\s*var\(--homepage-workflow-dock-bottom\);/s,
+    );
+    expect(APP_STYLES).toMatch(
+      /@media \(max-width:\s*899px\) \{[\s\S]*\.homepage-workflow-scene-list \{[^}]*padding-bottom:\s*calc\([^}]*var\(--homepage-workflow-dock-height\)[^}]*var\(--homepage-workflow-dock-bottom\)[^}]*\+\s*2rem[^}]*\);/s,
+    );
+    expect(APP_STYLES).toMatch(
+      /@media \(max-width:\s*899px\) \{[\s\S]*\.homepage-workflow-popup \{[^}]*--homepage-workflow-popup-overhang:\s*0rem;[^}]*right:\s*0\.5rem;[^}]*left:\s*0\.5rem;/s,
+    );
+    expect(APP_STYLES).toMatch(
+      /@media \(max-width:\s*899px\) \{[\s\S]*\.homepage-workflow-document-workspace \{[^}]*--homepage-workflow-document-offset-y:\s*clamp\(7rem,\s*15svh,\s*8rem\);/s,
     );
     expect(APP_STYLES).toMatch(
       /\.homepage-workflow-popup \{[^}]*position:\s*absolute;[^}]*bottom:\s*1rem;/s,
