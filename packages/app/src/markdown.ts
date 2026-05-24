@@ -14,6 +14,12 @@ export interface YamlFrontmatterSplit {
   body: string;
 }
 
+export interface YamlDocumentMetadataSplit {
+  frontmatter: string | null;
+  body: string;
+  endmatter: string | null;
+}
+
 function isExternalUrl(path: string): boolean {
   return /^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith("//");
 }
@@ -216,6 +222,40 @@ export function prependYamlFrontmatter(
   frontmatter?: string | null,
 ): string {
   return frontmatter ? `${frontmatter}${markdown}` : markdown;
+}
+
+export function splitYamlDocumentMetadata(
+  markdown: string,
+): YamlDocumentMetadataSplit {
+  const { frontmatter, body } = splitYamlFrontmatter(markdown);
+  const matches = [...body.matchAll(/\n---[ \t]*\r?\n/g)];
+  const match = matches.at(-1);
+
+  if (!match || match.index === undefined) {
+    return { frontmatter, body, endmatter: null };
+  }
+
+  const endmatter = body.slice(match.index);
+  const yaml = endmatter.replace(/^\n---[ \t]*\r?\n/, "");
+
+  if (!/\b(?:comments|suggestions):/.test(yaml)) {
+    return { frontmatter, body, endmatter: null };
+  }
+
+  return {
+    frontmatter,
+    body: body.slice(0, match.index).replace(/\s*$/, "\n"),
+    endmatter: endmatter.replace(/^\n/, ""),
+  };
+}
+
+export function appendYamlEndmatter(
+  markdown: string,
+  endmatter?: string | null,
+): string {
+  return endmatter
+    ? `${markdown.replace(/\s*$/, "\n")}\n${endmatter}`
+    : markdown;
 }
 
 export function createMarkedRenderer(options?: MarkdownOptions) {

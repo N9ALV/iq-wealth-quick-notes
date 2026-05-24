@@ -84,6 +84,63 @@ describe("CriticMarkup comments", () => {
     expect(editorStateToCriticMarkdown(doc, comments)).toBe(input);
   });
 
+  it("renders YAML endmatter-backed root comments and replies", () => {
+    const input = [
+      "This is {==highlighted==}{>>comment text<<}{#c1} text.",
+      "",
+      "---",
+      "comments:",
+      "  c1:",
+      "    by: AI",
+      '    at: "2024-01-15T10:30:00.000Z"',
+      "  c2:",
+      "    body: Reply text",
+      "    by: user",
+      '    at: "2024-01-15T10:31:00.000Z"',
+      "    re: c1",
+      "",
+    ].join("\n");
+
+    const { doc, comments, endmatter } = criticMarkdownToEditorState(input);
+
+    expect(endmatter).toContain("comments:");
+    expect(comments.get("c1")).toMatchObject({
+      id: "c1",
+      content: "comment text",
+      authorType: "ai",
+    });
+    expect(comments.get("c2")).toMatchObject({
+      id: "c2",
+      content: "Reply text",
+      parentCommentId: "c1",
+    });
+    const output = editorStateToCriticMarkdown(doc, comments);
+    expect(output).toContain("{==highlighted==}{>>comment text<<}{#c1}");
+    expect(output).toContain("body: Reply text");
+    expect(output).toContain("re: c1");
+  });
+
+  it("renders YAML endmatter-backed suggestions", () => {
+    const input = [
+      "Add {++one concrete example++}{#s1}.",
+      "",
+      "---",
+      "suggestions:",
+      "  s1:",
+      "    by: AI",
+      '    at: "2024-01-15T10:30:00.000Z"',
+      "",
+    ].join("\n");
+
+    const { changes } = criticMarkdownToRenderedHtml(input);
+
+    expect(changes.get("s1")).toMatchObject({
+      changeId: "s1",
+      authorType: "ai",
+      createdAt: "2024-01-15T10:30:00.000Z",
+    });
+  });
+
   it("preserves formatting nested inside a comment anchor", () => {
     const input =
       'The {==**important**==}{>>Review this phrasing<<}{id="cmt2" by="user@example.com" at="2024-01-15T10:31:00.000Z"} section stays bold.\n';

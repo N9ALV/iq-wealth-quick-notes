@@ -12,7 +12,7 @@
     },
     "version": {
       "type": "string",
-      "pattern": "^0\\.1$"
+      "pattern": "^0\\.[12]$"
     },
     "source": {
       "type": "object",
@@ -26,6 +26,10 @@
         "frontmatter": {
           "type": ["string", "null"],
           "description": "YAML frontmatter content when exposed separately by the parser."
+        },
+        "endmatter": {
+          "type": ["string", "null"],
+          "description": "YAML endmatter content when exposed separately by the parser."
         }
       }
     },

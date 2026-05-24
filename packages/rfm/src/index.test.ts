@@ -31,6 +31,63 @@ describe("validateRoughdraftMarkdown", () => {
     });
   });
 
+  it("accepts root comments and suggestions backed by YAML endmatter", () => {
+    const result = validateRoughdraftMarkdown(
+      [
+        "Please revisit {==this sentence==}{>>Needs a source.<<}{#c1}.",
+        "Add {++one concrete example++}{#s1}.",
+        "",
+        "---",
+        "comments:",
+        "  c1:",
+        "    by: user",
+        '    at: "2026-04-28T12:00:00.000Z"',
+        "suggestions:",
+        "  s1:",
+        "    by: AI",
+        '    at: "2026-04-28T12:05:00.000Z"',
+        "",
+      ].join("\n"),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.summary).toMatchObject({
+      comments: 1,
+      suggestions: 1,
+    });
+  });
+
+  it("reports a missing YAML endmatter entry for compact references", () => {
+    expect(codes("{>>Needs metadata<<}{#c1}\n")).toContain(
+      "missing-endmatter-entry",
+    );
+  });
+
+  it("reports invalid endmatter-only replies", () => {
+    const result = validateRoughdraftMarkdown(
+      [
+        "{>>Root<<}{#c1}",
+        "",
+        "---",
+        "comments:",
+        "  c1:",
+        "    by: user",
+        '    at: "2026-04-28T12:00:00.000Z"',
+        "  c2:",
+        "    body: Reply without parent",
+        "    by: AI",
+        '    at: "2026-04-28T12:01:00.000Z"',
+        "",
+      ].join("\n"),
+    );
+
+    expect(result.errors.map((diagnostic) => diagnostic.code)).toContain(
+      "missing-reply-target",
+    );
+    expect(result.ok).toBe(false);
+  });
+
   it("ignores review markers inside fenced code blocks and inline code spans", () => {
     const result = validateRoughdraftMarkdown(
       [
@@ -159,6 +216,54 @@ describe("extractRoughdraftReviewIndex", () => {
     });
   });
 
+  it("extracts equivalent review items from YAML endmatter metadata", () => {
+    const index = extractRoughdraftReviewIndex(
+      [
+        "Please revisit {==this sentence==}{>>Needs a source.<<}{#c1}.",
+        "Add {++one concrete example++}{#s1}.",
+        "",
+        "---",
+        "comments:",
+        "  c1:",
+        "    by: user",
+        '    at: "2026-04-28T12:00:00.000Z"',
+        "  c2:",
+        "    body: I added one.",
+        "    by: AI",
+        '    at: "2026-04-28T12:02:00.000Z"',
+        "    re: c1",
+        "suggestions:",
+        "  s1:",
+        "    by: AI",
+        '    at: "2026-04-28T12:05:00.000Z"',
+        "    status: resolved",
+        "",
+      ].join("\n"),
+    );
+
+    expect(index.summary).toMatchObject({
+      comments: 1,
+      replies: 1,
+      suggestions: 1,
+      unresolved: 2,
+    });
+    expect(index.items.map((item) => [item.id, item.kind])).toEqual([
+      ["c1", "comment"],
+      ["s1", "suggestion"],
+      ["c2", "reply"],
+    ]);
+    expect(index.items[0]).toMatchObject({
+      anchorText: "this sentence",
+      author: "user",
+      text: "Needs a source.",
+    });
+    expect(index.items[2]).toMatchObject({
+      parentId: "c1",
+      author: "AI",
+      text: "I added one.",
+    });
+  });
+
   it("preserves literal CriticMarkup inside inline code and fenced code blocks", () => {
     const index = extractRoughdraftReviewIndex(
       [
@@ -175,6 +280,31 @@ describe("extractRoughdraftReviewIndex", () => {
       replies: 0,
       suggestions: 0,
       unresolved: 0,
+    });
+  });
+
+  it("uses only the final YAML block as Roughdraft endmatter", () => {
+    const index = extractRoughdraftReviewIndex(
+      [
+        "Intro",
+        "",
+        "---",
+        "",
+        "Please revisit {==this sentence==}{>>Needs a source.<<}{#c1}.",
+        "",
+        "---",
+        "comments:",
+        "  c1:",
+        "    by: user",
+        '    at: "2026-04-28T12:00:00.000Z"',
+        "",
+      ].join("\n"),
+    );
+
+    expect(index.items).toHaveLength(1);
+    expect(index.items[0]).toMatchObject({
+      id: "c1",
+      author: "user",
     });
   });
 });
@@ -194,6 +324,41 @@ describe("RFM mutation helpers", () => {
 
     expect(updated).toBe(
       '# Plan\n\nKeep {==this claim==}{>>Needs proof<<}{id="c1" by="user" at="2026-04-28T12:00:00.000Z"}{>>Added a citation in the next paragraph.<<}{id="c2" by="AI" at="2026-04-28T12:10:00.000Z" re="c1"} as written.\n',
+    );
+  });
+
+  it("appends a reply to YAML endmatter without adding inline reply markup", () => {
+    const markdown = [
+      "# Plan",
+      "",
+      "Keep {==this claim==}{>>Needs proof<<}{#c1} as written.",
+      "",
+      "---",
+      "comments:",
+      "  c1:",
+      "    by: user",
+      '    at: "2026-04-28T12:00:00.000Z"',
+      "",
+    ].join("\n");
+
+    const updated = appendRoughdraftReply(markdown, {
+      parentId: "c1",
+      id: "c2",
+      author: "AI",
+      at: "2026-04-28T12:10:00.000Z",
+      message: "Added a citation in the next paragraph.",
+    });
+
+    expect(updated).not.toContain("{>>Added a citation");
+    expect(updated).toContain("body: Added a citation in the next paragraph.");
+    expect(extractRoughdraftReviewIndex(updated).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "c2",
+          kind: "reply",
+          parentId: "c1",
+        }),
+      ]),
     );
   });
 
@@ -224,5 +389,30 @@ describe("RFM mutation helpers", () => {
     expect(updated).toBe(
       'Add {++one example++}{id="s1" by="AI" at="2026-04-28T12:05:00.000Z" status="resolved" resolved="Accepted in draft."} and keep {>>open question<<}{id="c1" by="user" at="2026-04-28T12:06:00.000Z"}.\n',
     );
+  });
+
+  it("marks an endmatter-backed target resolved in YAML", () => {
+    const markdown = [
+      "Add {++one example++}{#s1}.",
+      "",
+      "---",
+      "suggestions:",
+      "  s1:",
+      "    by: AI",
+      '    at: "2026-04-28T12:05:00.000Z"',
+      "",
+    ].join("\n");
+
+    const updated = markRoughdraftResolved(markdown, {
+      targetId: "s1",
+      summary: "Accepted in draft.",
+    });
+
+    expect(updated).toContain("status: resolved");
+    expect(updated).toContain("resolved: Accepted in draft.");
+    expect(extractRoughdraftReviewIndex(updated).items[0]).toMatchObject({
+      id: "s1",
+      status: "resolved",
+    });
   });
 });
