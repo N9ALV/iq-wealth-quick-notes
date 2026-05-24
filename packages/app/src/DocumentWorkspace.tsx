@@ -406,7 +406,7 @@ export function DocumentWorkspace({
       ? Loader2
       : reviewHandoffState === "error" || reviewHandoffState === "undelivered"
         ? AlertTriangle
-        : CheckCheck;
+        : null;
   const reviewHandoffStatusTitle =
     reviewHandoffState === "undelivered"
       ? "No agent is watching now"
@@ -448,44 +448,38 @@ export function DocumentWorkspace({
               open={reviewHandoffPopoverOpen}
               onOpenChange={setReviewHandoffPopoverOpen}
             >
-              <div className="flex items-center rounded-[7px] shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        type="button"
-                        data-testid="review-handoff-button"
-                        size="lg"
-                        className="h-9 rounded-r-none rounded-l-[7px] bg-black px-3 text-sm font-bold text-white hover:bg-black/85 focus-visible:ring-black/25 dark:bg-black dark:text-white dark:hover:bg-black/85 dark:focus-visible:ring-white/30"
-                        disabled={reviewHandoffDisabled}
-                        onClick={() =>
-                          void handleCompleteReview(
-                            trimmedOverallComment
-                              ? { overallComment: trimmedOverallComment }
-                              : undefined,
-                          )
-                        }
-                      >
-                        <ReviewHandoffButtonIcon
-                          className={cn(
-                            "size-4",
-                            reviewHandoffState === "notifying" &&
-                              "animate-spin",
-                          )}
-                        />
-                        {reviewHandoffButtonLabel}
-                      </Button>
-                    }
-                  />
-                  <TooltipContent>Finish review</TooltipContent>
-                </Tooltip>
+              <div className="relative flex items-center overflow-hidden rounded-[7px] shadow-[0_10px_28px_rgba(0,0,0,0.18)] after:pointer-events-none after:absolute after:top-px after:right-8 after:bottom-px after:z-10 after:w-px after:bg-slate-700 after:content-[''] dark:after:bg-slate-700">
+                <Button
+                  type="button"
+                  data-testid="review-handoff-button"
+                  size="lg"
+                  className="h-9 rounded-r-none rounded-l-[7px] border-0 bg-black px-3 text-sm font-bold text-white hover:bg-black/85 focus-visible:ring-black/25 dark:bg-black dark:text-white dark:hover:bg-black/85 dark:focus-visible:ring-white/30"
+                  disabled={reviewHandoffDisabled}
+                  onClick={() =>
+                    void handleCompleteReview(
+                      trimmedOverallComment
+                        ? { overallComment: trimmedOverallComment }
+                        : undefined,
+                    )
+                  }
+                >
+                  {ReviewHandoffButtonIcon ? (
+                    <ReviewHandoffButtonIcon
+                      className={cn(
+                        "size-4",
+                        reviewHandoffState === "notifying" && "animate-spin",
+                      )}
+                    />
+                  ) : null}
+                  {reviewHandoffButtonLabel}
+                </Button>
                 <PopoverTrigger
                   render={
                     <Button
                       type="button"
                       data-testid="review-handoff-comment-trigger"
                       size="icon-lg"
-                      className="h-9 w-8 rounded-l-none rounded-r-[7px] border-l border-white/20 bg-black text-white hover:bg-black/85 focus-visible:ring-black/25 dark:bg-black dark:text-white dark:hover:bg-black/85 dark:focus-visible:ring-white/30"
+                      className="h-9 w-8 rounded-l-none rounded-r-[7px] border-0 bg-black text-white hover:bg-black/85 focus-visible:ring-black/25 dark:bg-black dark:text-white dark:hover:bg-black/85 dark:focus-visible:ring-white/30"
                       disabled={reviewHandoffDisabled}
                       aria-label="Add overall handoff comment"
                     >
