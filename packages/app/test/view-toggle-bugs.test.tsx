@@ -690,6 +690,47 @@ describe("review handoff watcher affordance", () => {
     );
   });
 
+  it("includes an overall comment when finishing from the primary handoff button", async () => {
+    const onCompleteReview = vi
+      .fn<(options?: CompleteReviewOptions) => Promise<CompleteReviewResult>>()
+      .mockResolvedValue({ delivered: true });
+
+    await renderWorkspace({ getWatcherCount: () => 1, onCompleteReview });
+
+    const commentTrigger = queryByTestId<HTMLButtonElement>(
+      container,
+      "review-handoff-comment-trigger",
+    );
+    if (!commentTrigger) {
+      throw new Error("Review handoff comment trigger not found");
+    }
+
+    await click(commentTrigger);
+
+    const textarea = queryByTestId<HTMLTextAreaElement>(
+      document.body,
+      "review-handoff-overall-comment",
+    );
+    if (!textarea) {
+      throw new Error("Overall comment textarea not found");
+    }
+
+    await change(textarea, "  Please prioritize the CLI contract.  ");
+
+    const doneReviewingButton = queryByTestId<HTMLButtonElement>(
+      container,
+      "review-handoff-button",
+    );
+    if (!doneReviewingButton) {
+      throw new Error("I'm done button not found");
+    }
+    await click(doneReviewingButton);
+
+    expect(onCompleteReview).toHaveBeenCalledWith({
+      overallComment: "Please prioritize the CLI contract.",
+    });
+  });
+
   it("keeps visible sent feedback after the watcher receives the event", async () => {
     let watcherCount = 1;
     const onCompleteReview = vi

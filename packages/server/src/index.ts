@@ -4,7 +4,10 @@ import { createServer as createHttpServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractRoughdraftReviewIndex } from "@roughdraft/rfm";
+import {
+  appendRoughdraftDocumentComment,
+  extractRoughdraftReviewIndex,
+} from "@roughdraft/rfm";
 import express, { type Express, type Request, type Response } from "express";
 import {
   hasNonLoopbackHost,
@@ -649,7 +652,17 @@ export function createApp(options: CreateAppOptions = {}): CreateAppResult {
     }
 
     const markdown = fs.readFileSync(target.absolutePath, "utf-8");
-    const index = extractRoughdraftReviewIndex(markdown);
+    const persistedMarkdown = overallComment
+      ? appendRoughdraftDocumentComment(markdown, {
+          message: overallComment,
+          author: "user",
+        })
+      : markdown;
+    if (persistedMarkdown !== markdown) {
+      fs.writeFileSync(target.absolutePath, persistedMarkdown);
+    }
+
+    const index = extractRoughdraftReviewIndex(persistedMarkdown);
     const result = reviewEvents.emit({
       documentPath: target.absolutePath,
       projectPath: target.projectDir,

@@ -458,7 +458,13 @@ export function DocumentWorkspace({
                         size="lg"
                         className="h-9 rounded-r-none rounded-l-[7px] bg-black px-3 text-sm font-bold text-white hover:bg-black/85 focus-visible:ring-black/25 dark:bg-black dark:text-white dark:hover:bg-black/85 dark:focus-visible:ring-white/30"
                         disabled={reviewHandoffDisabled}
-                        onClick={() => void handleCompleteReview()}
+                        onClick={() =>
+                          void handleCompleteReview(
+                            trimmedOverallComment
+                              ? { overallComment: trimmedOverallComment }
+                              : undefined,
+                          )
+                        }
                       >
                         <ReviewHandoffButtonIcon
                           className={cn(

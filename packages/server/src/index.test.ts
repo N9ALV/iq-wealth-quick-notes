@@ -282,15 +282,60 @@ describe("createApp", () => {
         sequence: 1,
         overallComment: "Please address the risk section.",
         summary: {
-          comments: 1,
+          comments: 2,
           replies: 0,
           suggestions: 0,
-          unresolved: 1,
+          unresolved: 2,
         },
       },
     });
     expect(response.body.event.version).toEqual(expect.any(String));
     expect(response.body.event.createdAt).toEqual(expect.any(String));
+  });
+
+  it("persists an overall review comment as document-level YAML feedback before emitting the event", async () => {
+    const filePath = path.join(projectDir, "draft.md");
+    fs.writeFileSync(
+      filePath,
+      [
+        "# Draft",
+        "",
+        "Needs {==support==}{>>Add a source<<}{#c1}.",
+        "",
+        "---",
+        "comments:",
+        "  c1:",
+        "    by: user",
+        '    at: "2026-04-28T12:00:00.000Z"',
+        "workflow:",
+        "  owner: editorial",
+        "",
+      ].join("\n"),
+    );
+    const { app } = createApp({
+      homeDir,
+      staticDirPath: projectDir,
+    });
+
+    const response = await request(app).post("/api/review-events").send({
+      projectPath: projectDir,
+      path: "draft.md",
+      overallComment: "Please address the risk section.",
+    });
+
+    const saved = fs.readFileSync(filePath, "utf-8");
+    expect(response.status).toBe(201);
+    expect(saved).toContain("workflow:\n  owner: editorial");
+    expect(saved).toContain("  c1:");
+    expect(saved).toContain("  c2:");
+    expect(saved).toContain("    body: Please address the risk section.");
+    expect(saved).toContain("    by: user");
+    expect(response.body.event.summary).toMatchObject({
+      comments: 2,
+      replies: 0,
+      suggestions: 0,
+      unresolved: 2,
+    });
   });
 
   it("omits whitespace-only overall comments from review events", async () => {
