@@ -227,9 +227,11 @@ export function isReviewHandoffDisabled({
   documentDiskChangeState: DiskChangeState;
   reviewHandoffState: ReviewHandoffState;
 }) {
+  // Transient save states ("saving"/"unsaved") intentionally do NOT disable the
+  // button. Disabling on them dims the whole control on every keystroke while
+  // autosave debounces. Instead the button stays enabled and flushes the
+  // pending save on click, so the agent still receives the latest content.
   return (
-    saveState === "saving" ||
-    saveState === "unsaved" ||
     saveState === "error" ||
     reviewHandoffState !== "idle" ||
     documentDiskChangeState !== "clean"
@@ -398,6 +400,13 @@ export function DocumentWorkspace({
 
       setReviewHandoffState("notifying");
       try {
+        // The button stays enabled while autosave is still pending, so make
+        // sure any debounced edits are persisted before handing off.
+        const flushResult = await saveControllerRef.current?.flushSave();
+        if (flushResult && flushResult.status === "error") {
+          throw flushResult.error;
+        }
+
         const result = await onCompleteReview(options);
         if (result.delivered) {
           setReviewWatcherCount(0);
@@ -519,7 +528,7 @@ export function DocumentWorkspace({
               open={reviewHandoffPopoverOpen}
               onOpenChange={setReviewHandoffPopoverOpen}
             >
-              <div className="relative flex items-center overflow-hidden rounded-[7px] shadow-[0_10px_28px_rgba(0,0,0,0.18)] after:pointer-events-none after:absolute after:top-px after:right-8 after:bottom-px after:z-10 after:w-px after:bg-slate-700 after:content-[''] dark:after:bg-slate-700">
+              <div className="relative flex items-center overflow-hidden rounded-[7px] shadow-[0_10px_28px_rgba(0,0,0,0.18)] after:pointer-events-none after:absolute after:top-px after:right-8 after:bottom-px after:z-10 after:w-px after:bg-[#444] after:content-[''] dark:after:bg-[#444]">
                 <Button
                   type="button"
                   data-testid="review-handoff-button"
@@ -712,10 +721,10 @@ export function DocumentWorkspace({
                       <button
                         type="button"
                         data-testid="document-editor-view-toggle"
-                        className="grid h-[1.25rem] shrink-0 grid-cols-2 rounded-[999px] bg-[#E8E3DB] dark:bg-slate-700 px-[2px] pt-[3px] pb-[3px] shadow-[inset_0_1px_0_rgba(255,251,245,0.72)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        className="grid shrink-0 grid-cols-2 rounded-[999px] bg-[#E8E3DB] dark:bg-slate-700 px-[2px] pt-[3px] pb-[2px] shadow-[inset_0_1px_0_rgba(255,251,245,0.72)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
                       >
                         <span
-                          className={`flex h-[1rem] w-[1.375rem] items-center justify-center rounded-full transition ${
+                          className={`flex w-[1.375rem] items-center justify-center rounded-full py-[2px] transition ${
                             documentEditorViewMode === "rich-text"
                               ? "bg-[#FFFDFC] dark:bg-slate-500 text-stone-700 dark:text-white shadow-[0_1px_2px_rgba(41,37,36,0.12)]"
                               : "text-stone-500 dark:text-slate-400"
@@ -724,7 +733,7 @@ export function DocumentWorkspace({
                           <Eye className="size-[0.75rem]" />
                         </span>
                         <span
-                          className={`flex h-[1rem] w-[1.375rem] items-center justify-center rounded-full transition ${
+                          className={`flex w-[1.375rem] items-center justify-center rounded-full py-[2px] transition ${
                             documentEditorViewMode === "code"
                               ? "bg-[#FFFDFC] dark:bg-slate-500 text-stone-700 dark:text-white shadow-[0_1px_2px_rgba(41,37,36,0.12)]"
                               : "text-stone-500 dark:text-slate-400"

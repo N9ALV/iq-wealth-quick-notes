@@ -507,8 +507,6 @@ describe("saving/saved status indicator (issue 2 fix)", () => {
   });
 
   it.each([
-    ["saving", "clean"],
-    ["unsaved", "clean"],
     ["error", "clean"],
     ["saved", "conflict"],
   ] satisfies Array<
@@ -523,7 +521,22 @@ describe("saving/saved status indicator (issue 2 fix)", () => {
     ).toBe(true);
   });
 
-  it("allows handoff only when saved, conflict-free, and idle", () => {
+  it.each(["saving", "unsaved"] satisfies DocumentSaveState[])(
+    "keeps handoff enabled while a debounced save is pending (save state %s)",
+    (saveState) => {
+      // The button must not dim on every keystroke while autosave debounces; it
+      // stays enabled and flushes the pending save on click instead.
+      expect(
+        isReviewHandoffDisabled({
+          saveState,
+          documentDiskChangeState: "clean",
+          reviewHandoffState: "idle",
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it("allows handoff when saved, conflict-free, and idle", () => {
     expect(
       isReviewHandoffDisabled({
         saveState: "saved",
