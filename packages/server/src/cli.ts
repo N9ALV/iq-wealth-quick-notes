@@ -1,10 +1,10 @@
+import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import {
   type RfmDiagnostic,
   validateRoughdraftMarkdown,
@@ -1136,11 +1136,17 @@ function buildLoopbackUrl(host: string, port: number, pathname = "/"): URL {
   return new URL(`http://${baseHost}:${port}${pathname}`);
 }
 
-function buildTargetUrl(baseUrl: string, openPath: string): string {
+function buildTargetUrl(
+  baseUrl: string,
+  projectDir: string,
+  openPath: string,
+): string {
   const url = new URL(baseUrl);
+  const relativePath = path.relative(projectDir, openPath);
 
   url.pathname = "/";
-  url.searchParams.set("path", openPath);
+  url.searchParams.set("path", relativePath);
+  url.searchParams.set("projectPath", projectDir);
   return url.toString();
 }
 
@@ -1401,13 +1407,15 @@ async function sendOpenRequestToExistingWindow(
   baseUrl: string,
   targetUrl: string,
   openPath: string,
+  projectDir: string,
 ): Promise<boolean> {
   try {
     const requestUrl = new URL("/api/open-request", baseUrl);
+    const relativePath = path.relative(projectDir, openPath);
     const response = await deps.fetchImpl(requestUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: openPath, url: targetUrl }),
+      body: JSON.stringify({ path: relativePath, url: targetUrl }),
       signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
     });
 
@@ -2733,7 +2741,7 @@ export async function runCli(
         baseUrl = buildPublicBaseUrl(result.server.port);
       }
 
-      const targetUrl = buildTargetUrl(baseUrl, openPath);
+      const targetUrl = buildTargetUrl(baseUrl, projectDir, openPath);
       let openMode: OpenMode = "disabled";
       if (!options.noOpen && deps.env.ROUGHDRAFT_NO_OPEN !== "1") {
         openMode = (await sendOpenRequestToExistingWindow(
@@ -2741,6 +2749,7 @@ export async function runCli(
           baseUrl,
           targetUrl,
           openPath,
+          projectDir,
         ))
           ? "existing-window"
           : deps.openUrl(targetUrl);

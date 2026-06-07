@@ -97,9 +97,16 @@ describe("cli", () => {
 
   function expectedOpenUrl(baseUrl: string, documentPath: string): string {
     const url = new URL(baseUrl);
+    const projectPath = path.dirname(documentPath);
+    const relativePath = path.relative(projectPath, documentPath);
     url.pathname = "/";
-    url.searchParams.set("path", documentPath);
+    url.searchParams.set("path", relativePath);
+    url.searchParams.set("projectPath", projectPath);
     return url.toString();
+  }
+
+  function expectedOpenRequestPath(documentPath: string): string {
+    return path.relative(path.dirname(documentPath), documentPath);
   }
 
   function parseOnlyJsonLog<T>(logs: string[]): T {
@@ -393,7 +400,7 @@ describe("cli", () => {
 
     expect(exitCode).toBe(0);
     expect(postedOpenRequest).toEqual({
-      path: documentPath,
+      path: expectedOpenRequestPath(documentPath),
       url: expectedOpenUrl(
         `http://localhost:${ROUGHDRAFT_DEFAULT_PORT}`,
         documentPath,
@@ -1091,7 +1098,10 @@ describe("cli", () => {
     }>(test.logs);
 
     expect(exitCode).toBe(0);
-    expect(test.getLastOpenedUrl()).toContain(encodeURIComponent(documentPath));
+    const openedUrl = new URL(test.getLastOpenedUrl() ?? "");
+    expect(openedUrl.pathname).toBe("/");
+    expect(openedUrl.searchParams.get("path")).toBe("draft.md");
+    expect(openedUrl.searchParams.get("projectPath")).toBe(projectDir);
     expect(payload).toMatchObject({
       timedOut: false,
       events: [

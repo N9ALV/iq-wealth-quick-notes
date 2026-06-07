@@ -744,6 +744,20 @@ describe("createApp", () => {
         "utf-8",
       ),
     ).toBe("png bytes");
+
+    const storedAssetResponse = await request(app).get("/api/files").query({
+      projectPath: projectDir,
+      path: ".roughdraft-assets/My-Sketch.png",
+    });
+    expect(storedAssetResponse.status).toBe(200);
+    expect(storedAssetResponse.body.toString("utf-8")).toBe("png bytes");
+
+    fs.writeFileSync(path.join(projectDir, ".env"), "SECRET=value\n");
+    const hiddenFileResponse = await request(app).get("/api/files").query({
+      projectPath: projectDir,
+      path: ".env",
+    });
+    expect(hiddenFileResponse.status).toBe(404);
   });
 
   it("advertises remote-document support in the status capabilities", async () => {

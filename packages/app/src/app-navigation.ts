@@ -50,6 +50,8 @@ export function getDocumentEditorViewModeFromLocation(
 }
 
 export function getRequestedPathState(): RequestedPathState {
+  const searchParams = new URLSearchParams(window.location.search);
+  const queryProjectPath = searchParams.get("projectPath")?.trim();
   const rawPath = getRawPathFromLocation();
   if (!rawPath) {
     return { rawPath: null, projectPath: null, documentPath: null };
@@ -58,6 +60,11 @@ export function getRequestedPathState(): RequestedPathState {
   const normalizedPath = normalizePathSeparators(rawPath);
   if (!normalizedPath.toLowerCase().endsWith(".md")) {
     return { rawPath, projectPath: rawPath, documentPath: null };
+  }
+
+  if (queryProjectPath) {
+    const documentPath = rawPath.replace(/^[\\/]+/, "");
+    return { rawPath, projectPath: queryProjectPath, documentPath };
   }
 
   const lastSlashIndex = Math.max(
@@ -170,9 +177,14 @@ export function buildLocationForLinkedMarkdownDocument({
 function buildLocationForPath(path?: string | null) {
   const nextPath = path?.trim() || null;
   const url = new URL(window.location.href);
+  const hasProjectPath = url.searchParams.has("projectPath");
 
   if (nextPath) {
-    if (!nextPath.startsWith("/") && !nextPath.includes("\\")) {
+    if (
+      !hasProjectPath &&
+      !nextPath.startsWith("/") &&
+      !nextPath.includes("\\")
+    ) {
       url.pathname = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
       url.searchParams.delete("path");
     } else {

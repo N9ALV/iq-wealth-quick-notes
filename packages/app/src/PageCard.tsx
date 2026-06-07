@@ -3,8 +3,17 @@ import type { Mark as ProseMirrorMark } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import {
+  memo,
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { buildLocationForLinkedMarkdownDocument } from "./app-navigation";
 import { CommentEditorList } from "./CommentEditorList";
 import {
   type CriticChangeAttrs,
@@ -30,7 +39,6 @@ import {
 } from "./editor-extensions";
 import { cn } from "./lib/utils";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
-import { buildLocationForLinkedMarkdownDocument } from "./app-navigation";
 import { toHtml } from "./markdown";
 import type { Page, StorageBackend } from "./storage";
 import { useCommentAnchorLayout } from "./useCommentAnchorLayout";
@@ -48,6 +56,19 @@ export interface DocumentSaveController {
 
 type EditorViewMode = "rich-text" | "code";
 export type DocumentInteractionMode = "viewing" | "suggesting" | "editing";
+
+function filesFromDataTransfer(dataTransfer?: DataTransfer | null): File[] {
+  if (!dataTransfer) return [];
+
+  const itemFiles = Array.from(dataTransfer.items ?? [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+
+  if (itemFiles.length > 0) return itemFiles;
+
+  return Array.from(dataTransfer.files ?? []);
+}
 
 interface PageCardProps {
   page: Page;
@@ -718,6 +739,48 @@ const RichTextEditorSurface = memo(function RichTextEditorSurface({
     [backend, resolveFileUrl, resolveLinkUrl],
   );
 
+  const handleCardPaste = useCallback(
+    (event: ReactClipboardEvent<HTMLDivElement>) => {
+      if (event.defaultPrevented) return;
+      if (interactionMode === "viewing") return;
+
+      const files = filesFromDataTransfer(event.clipboardData);
+      if (files.length === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      void insertFiles(files);
+    },
+    [insertFiles, interactionMode],
+  );
+
+  const handleCardDragOver = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (event.defaultPrevented) return;
+      if (interactionMode === "viewing") return;
+
+      if (filesFromDataTransfer(event.dataTransfer).length === 0) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    [interactionMode],
+  );
+
+  const handleCardDrop = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (event.defaultPrevented) return;
+      if (interactionMode === "viewing") return;
+
+      const files = filesFromDataTransfer(event.dataTransfer);
+      if (files.length === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      void insertFiles(files);
+    },
+    [insertFiles, interactionMode],
+  );
+
   const refreshCriticChanges = useCallback(() => {
     if (criticChangeFrameRef.current != null) {
       cancelAnimationFrame(criticChangeFrameRef.current);
@@ -753,16 +816,18 @@ const RichTextEditorSurface = memo(function RichTextEditorSurface({
           class: "tiptap min-h-[70vh]",
         },
         handleDrop: (_view, event) => {
-          const files = Array.from(event.dataTransfer?.files ?? []);
+          const files = filesFromDataTransfer(event.dataTransfer);
           if (files.length === 0) return false;
           event.preventDefault();
+          event.stopPropagation();
           void insertFiles(files);
           return true;
         },
         handlePaste: (view, event) => {
-          const files = Array.from(event.clipboardData?.files ?? []);
+          const files = filesFromDataTransfer(event.clipboardData);
           if (files.length > 0) {
             event.preventDefault();
+            event.stopPropagation();
             void insertFiles(files);
             return true;
           }
@@ -1895,6 +1960,9 @@ const RichTextEditorSurface = memo(function RichTextEditorSurface({
     <div
       className="cursor-text bg-transparent"
       data-testid="page-card-rich-text"
+      onDragOver={handleCardDragOver}
+      onDrop={handleCardDrop}
+      onPaste={handleCardPaste}
     >
       <div data-testid="document-page-shell" className={documentShellClass}>
         <div className={documentMainClass}>

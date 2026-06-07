@@ -228,6 +228,15 @@ function ensureProjectPath(
   return absolute;
 }
 
+function isAllowedServedFilePath(relativePath: string): boolean {
+  return relativePath
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .every(
+      (segment) => !segment.startsWith(".") || segment === ".roughdraft-assets",
+    );
+}
+
 function pageFilePathFromId(projectDir: string, id: string): string | null {
   return ensureProjectPath(projectDir, `${id}.md`);
 }
@@ -1190,12 +1199,17 @@ export function createApp(options: CreateAppOptions = {}): CreateAppResult {
       typeof req.query.path === "string" ? req.query.path : "";
     const absolutePath = ensureProjectPath(projectDir, relativePath);
 
+    if (!isAllowedServedFilePath(relativePath)) {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
     if (!absolutePath || !fs.existsSync(absolutePath)) {
       res.status(404).json({ error: "File not found" });
       return;
     }
 
-    res.sendFile(absolutePath);
+    res.sendFile(absolutePath, { dotfiles: "allow" });
   });
 
   app.post("/api/assets", (req, res) => {
